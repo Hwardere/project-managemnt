@@ -1,0 +1,10 @@
+# Runtime data — NEVER commit real property data, tasks, or uploaded files
+data/
+
+# Python
+__pycache__/
+*.pyc
+*.tmp
+
+# macOS
+.DS_Store
