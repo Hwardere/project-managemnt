@@ -4,6 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Property Manager</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
   :root{
     --bg:#f4f6f9; --card:#fff; --ink:#1c2733; --muted:#687889; --line:#e3e8ee;
@@ -12,192 +14,263 @@
   }
   *{box-sizing:border-box}
   body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
-    background:var(--bg);color:var(--ink);-webkit-font-smoothing:antialiased}
-  header{background:var(--card);border-bottom:1px solid var(--line);padding:16px 24px;
-    display:flex;align-items:center;gap:14px;position:sticky;top:0;z-index:5}
-  header h1{font-size:18px;margin:0;font-weight:650;letter-spacing:-.2px}
+    color:var(--ink);-webkit-font-smoothing:antialiased;overflow:hidden;}
+
+  /* ── Map background ── */
+  #mapWrap{position:fixed;inset:0;z-index:0;}
+  #mapEl{width:100%;height:100%;}
+
+  /* ── Login overlay ── */
+  #loginOverlay{position:fixed;inset:0;z-index:30;display:flex;align-items:center;justify-content:center;
+    transition:opacity .6s ease;}
+  #loginOverlay.fade-out{opacity:0;pointer-events:none;}
+  .login-glass{
+    background:rgba(8,10,20,.72);backdrop-filter:blur(28px);-webkit-backdrop-filter:blur(28px);
+    border:1px solid rgba(255,255,255,.13);border-radius:22px;padding:40px;
+    width:100%;max-width:380px;box-shadow:0 12px 50px rgba(0,0,0,.7);}
+  .login-glass .logo-row{display:flex;align-items:center;gap:12px;margin-bottom:22px;}
+  .login-glass .logo-box{width:40px;height:40px;border-radius:10px;background:var(--accent);
+    color:#fff;display:grid;place-items:center;font-weight:700;font-size:19px;flex:none;}
+  .login-glass h2{margin:0;font-size:22px;color:#fff;font-weight:700;letter-spacing:-.3px;}
+  .login-glass p{margin:0 0 26px;color:rgba(255,255,255,.45);font-size:13px;}
+  .login-glass input{width:100%;margin-bottom:12px;background:rgba(255,255,255,.08);
+    border:1px solid rgba(255,255,255,.18);color:#fff;border-radius:11px;
+    padding:13px 15px;font:inherit;font-size:15px;}
+  .login-glass input::placeholder{color:rgba(255,255,255,.3);}
+  .login-glass input:focus{outline:none;border-color:rgba(99,155,255,.55);background:rgba(255,255,255,.13);}
+  .login-glass .sign-in-btn{width:100%;padding:14px;border-radius:11px;background:var(--accent);
+    border:none;color:#fff;font:inherit;font-weight:600;font-size:15px;cursor:pointer;
+    transition:background .15s;letter-spacing:.1px;}
+  .login-glass .sign-in-btn:hover{background:#1d54d4;}
+  .login-err{color:#fca5a5;font-size:13px;min-height:18px;margin-bottom:10px;}
+
+  /* ── App shell ── */
+  #appView{position:relative;z-index:10;}
+  header{background:rgba(255,255,255,.93);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
+    border-bottom:1px solid rgba(0,0,0,.07);padding:0 24px;height:57px;
+    display:flex;align-items:center;gap:14px;position:sticky;top:0;z-index:25;}
+  header h1{font-size:17px;margin:0;font-weight:650;letter-spacing:-.2px;}
   header .logo{width:32px;height:32px;border-radius:8px;background:var(--accent);color:#fff;
-    display:grid;place-items:center;font-weight:700;font-size:16px}
-  header .right{margin-left:auto;display:flex;align-items:center;gap:12px;font-size:13px;color:var(--muted)}
-  .role-badge{padding:3px 10px;border-radius:999px;font-weight:600;font-size:12px}
-  .role-badge.admin{background:#eef3ff;color:var(--accent)}
-  .role-badge.worker{background:#e9f9ef;color:var(--ok)}
-  .wrap{max-width:980px;margin:0 auto;padding:24px 20px 80px}
+    display:grid;place-items:center;font-weight:700;font-size:16px;flex:none;}
+  header .right{margin-left:auto;display:flex;align-items:center;gap:10px;font-size:13px;color:var(--muted);}
+  .role-badge{padding:3px 10px;border-radius:999px;font-weight:600;font-size:12px;}
+  .role-badge.admin{background:#eef3ff;color:var(--accent);}
+  .role-badge.worker{background:#e9f9ef;color:var(--ok);}
 
+  /* ── Nav bar (floats over map) ── */
+  .nav-bar{padding:10px 20px 0;display:flex;gap:8px;position:relative;z-index:15;}
+  .navbtn{padding:9px 18px;border-radius:10px;border:1px solid rgba(255,255,255,.4);
+    background:rgba(255,255,255,.82);backdrop-filter:blur(10px);font-weight:600;
+    color:var(--muted);cursor:pointer;font:inherit;font-size:14px;transition:all .15s;}
+  .navbtn:hover{background:rgba(255,255,255,.95);}
+  .navbtn.active{background:var(--accent);border-color:var(--accent);color:#fff;backdrop-filter:none;}
+
+  /* ── Map float controls ── */
+  .map-fab{position:fixed;bottom:28px;right:20px;z-index:20;display:flex;flex-direction:column;gap:8px;}
+  .map-fab button{padding:11px 18px;border-radius:12px;border:none;font:inherit;font-weight:600;
+    font-size:14px;cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,.25);}
+  .map-fab .add-btn{background:var(--accent);color:#fff;}
+  .map-fab .add-btn:hover{background:#1d54d4;}
+  .map-fab .fit-btn{background:rgba(255,255,255,.92);color:var(--ink);}
+  .map-fab .fit-btn:hover{background:#fff;}
+
+  /* ── Map pin ── */
+  @keyframes pinDrop{
+    0%{transform:translateY(-40px) scale(.6);opacity:0;}
+    65%{transform:translateY(5px) scale(1.1);}
+    100%{transform:translateY(0) scale(1);opacity:1;}
+  }
+  .map-pin{width:26px;height:36px;position:relative;cursor:pointer;
+    animation:pinDrop .55s cubic-bezier(.34,1.56,.64,1) both;}
+  .map-pin::before{content:'';position:absolute;top:0;left:2px;width:22px;height:22px;
+    background:var(--accent);border:3px solid #fff;border-radius:50% 50% 50% 0;
+    transform:rotate(-45deg);box-shadow:0 3px 10px rgba(37,99,235,.55);}
+  .map-pin::after{content:'';position:absolute;bottom:0;left:50%;transform:translateX(-50%);
+    width:8px;height:5px;background:rgba(0,0,0,.22);border-radius:50%;filter:blur(2px);}
+  .map-pin.ok::before{background:#16a34a;box-shadow:0 3px 10px rgba(22,163,74,.5);}
+  .map-pin.warn::before{background:#d97706;box-shadow:0 3px 10px rgba(217,119,6,.5);}
+  .map-pin.danger::before{background:#dc2626;box-shadow:0 3px 10px rgba(220,38,38,.5);}
+  .leaflet-tooltip.pin-tip{background:rgba(8,10,20,.82);color:#fff;border:none;border-radius:8px;
+    font-size:12px;font-weight:600;padding:5px 10px;box-shadow:0 2px 8px rgba(0,0,0,.4);}
+  .leaflet-tooltip.pin-tip::before{display:none;}
+
+  /* ── Property side panel ── */
+  #propPanel{position:fixed;top:57px;right:0;bottom:0;width:480px;max-width:100vw;
+    background:#fff;border-left:1px solid var(--line);
+    box-shadow:-6px 0 30px rgba(16,24,40,.14);
+    transform:translateX(100%);transition:transform .3s cubic-bezier(.4,0,.2,1);
+    z-index:22;display:flex;flex-direction:column;overflow:hidden;}
+  #propPanel.open{transform:translateX(0);}
+  .panel-head{padding:14px 18px;border-bottom:1px solid var(--line);
+    display:flex;align-items:center;gap:8px;position:sticky;top:0;background:#fff;z-index:2;flex:none;}
+  .panel-back{background:none;border:none;font-size:20px;color:var(--muted);cursor:pointer;
+    padding:4px 8px 4px 2px;line-height:1;flex:none;}
+  .panel-back:hover{color:var(--ink);}
+  .panel-head h2{margin:0;font-size:15px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .panel-body{padding:16px 18px 80px;flex:1;overflow-y:auto;}
+  .panel-addr-sub{color:var(--muted);font-size:13px;margin-bottom:14px;}
+
+  /* ── Calendar / Sheet covers map ── */
+  #calView,#sheetView{background:var(--bg);min-height:calc(100vh - 57px);
+    padding:24px 20px 80px;max-width:980px;margin:0 auto;overflow-y:auto;}
+  #calView{max-height:calc(100vh - 57px);overflow-y:auto;}
+
+  /* ── Shared controls ── */
   select,input,textarea{font:inherit;padding:10px 12px;border:1px solid var(--line);border-radius:9px;
-    background:#fff;color:var(--ink)}
-  select:focus,input:focus,textarea:focus{outline:2px solid var(--accent-soft);border-color:var(--accent)}
+    background:#fff;color:var(--ink);}
+  select:focus,input:focus,textarea:focus{outline:2px solid var(--accent-soft);border-color:var(--accent);}
   button{font:inherit;font-weight:600;padding:10px 16px;border-radius:9px;border:1px solid var(--line);
-    background:#fff;color:var(--ink);cursor:pointer;white-space:nowrap}
-  button:hover{background:#f7f9fc}
-  button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
-  button.primary:hover{background:#1d54d4}
-  button.danger{color:var(--danger);border-color:#f3c9c9}
-  button.danger:hover{background:#fdf2f2}
-  button:disabled{opacity:.5;cursor:not-allowed}
-  button.ghost{border:none;background:none;color:var(--accent);padding:6px}
+    background:#fff;color:var(--ink);cursor:pointer;white-space:nowrap;}
+  button:hover{background:#f7f9fc;}
+  button.primary{background:var(--accent);border-color:var(--accent);color:#fff;}
+  button.primary:hover{background:#1d54d4;}
+  button.danger{color:var(--danger);border-color:#f3c9c9;}
+  button.danger:hover{background:#fdf2f2;}
+  button:disabled{opacity:.5;cursor:not-allowed;}
+  button.ghost{border:none;background:none;color:var(--accent);padding:6px;}
 
-  /* login */
-  .login-screen{max-width:380px;margin:9vh auto;background:#fff;border:1px solid var(--line);
-    border-radius:16px;box-shadow:var(--shadow);padding:30px}
-  .login-screen h2{margin:0 0 6px;font-size:20px}
-  .login-screen p{margin:0 0 20px;color:var(--muted);font-size:14px}
-  .login-screen input{width:100%;margin-bottom:12px}
-  .login-screen button{width:100%}
-  .login-err{color:var(--danger);font-size:13px;min-height:18px;margin-bottom:8px}
+  .addr-head{display:flex;align-items:baseline;gap:12px;margin:22px 2px 4px;flex-wrap:wrap;}
+  .addr-head h2{margin:0;font-size:20px;letter-spacing:-.4px;}
+  .addr-head .sub{color:var(--muted);font-size:13px;}
 
-  .toolbar{background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);
-    padding:16px;display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap}
-  .field{display:flex;flex-direction:column;gap:6px}
-  .field label{font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.4px}
-  .grow{flex:1}
-  .toolbar select{min-width:300px}
-  @media(max-width:640px){.toolbar select{min-width:200px;width:100%}}
+  .tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin:0 0 16px;}
+  .tab{padding:9px 14px;cursor:pointer;font-weight:600;font-size:13px;color:var(--muted);
+    border-bottom:2px solid transparent;margin-bottom:-1px;}
+  .tab.active{color:var(--accent);border-bottom-color:var(--accent);}
 
-  .addr-head{display:flex;align-items:baseline;gap:12px;margin:22px 2px 4px;flex-wrap:wrap}
-  .addr-head h2{margin:0;font-size:22px;letter-spacing:-.4px}
-  .addr-head .sub{color:var(--muted);font-size:14px}
+  .alerts{margin:0 0 14px;display:flex;flex-direction:column;gap:8px;}
+  .alert{display:flex;align-items:center;gap:10px;padding:10px 13px;border-radius:10px;font-size:13px;border:1px solid;}
+  .alert.danger{background:#fef2f2;border-color:#fcd5d5;color:#991b1b;}
+  .alert.warn{background:#fffbeb;border-color:#fde9b8;color:#92500e;}
+  .alert .dot{width:7px;height:7px;border-radius:50%;flex:none;}
+  .alert.danger .dot{background:var(--danger);} .alert.warn .dot{background:var(--warn);}
 
-  .tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin:14px 0 18px}
-  .tab{padding:10px 16px;cursor:pointer;font-weight:600;font-size:14px;color:var(--muted);
-    border-bottom:2px solid transparent;margin-bottom:-1px}
-  .tab.active{color:var(--accent);border-bottom-color:var(--accent)}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+  @media(max-width:720px){.grid{grid-template-columns:1fr;}}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);padding:16px;}
+  .card.full{grid-column:1/-1;}
+  .card h3{margin:0 0 12px;font-size:12px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);font-weight:700;}
+  .row{display:flex;justify-content:space-between;gap:16px;padding:7px 0;border-top:1px solid var(--line);font-size:13px;}
+  .row:first-of-type{border-top:none;}
+  .row .k{color:var(--muted);} .row .v{font-weight:600;text-align:right;}
+  table{width:100%;border-collapse:collapse;font-size:13px;}
+  th,td{text-align:left;padding:8px 7px;border-bottom:1px solid var(--line);}
+  th{font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);font-weight:700;}
+  tr:last-child td{border-bottom:none;}
+  .pill{display:inline-block;padding:2px 9px;border-radius:999px;font-size:12px;font-weight:600;}
+  .pill.ok{background:#e9f9ef;color:var(--ok);} .pill.warn{background:#fef3e2;color:var(--warn);}
+  .pill.danger{background:#fdeaea;color:var(--danger);}
 
-  .alerts{margin:6px 0 14px;display:flex;flex-direction:column;gap:8px}
-  .alert{display:flex;align-items:center;gap:10px;padding:11px 14px;border-radius:10px;font-size:14px;border:1px solid}
-  .alert.danger{background:#fef2f2;border-color:#fcd5d5;color:#991b1b}
-  .alert.warn{background:#fffbeb;border-color:#fde9b8;color:#92500e}
-  .alert .dot{width:8px;height:8px;border-radius:50%;flex:none}
-  .alert.danger .dot{background:var(--danger)} .alert.warn .dot{background:var(--warn)}
+  .slots{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+  @media(max-width:640px){.slots{grid-template-columns:1fr;}}
+  .slot{border:1px solid var(--line);border-radius:12px;padding:13px;display:flex;flex-direction:column;gap:7px;}
+  .slot.filled{border-color:#cfe0ff;background:#fafcff;}
+  .slot .label{font-weight:650;font-size:13px;display:flex;align-items:center;gap:7px;}
+  .slot .filemeta{font-size:12px;color:var(--muted);}
+  .slot .actions{display:flex;gap:8px;margin-top:auto;flex-wrap:wrap;}
+  .slot a.view{color:var(--accent);text-decoration:none;font-weight:600;font-size:13px;word-break:break-all;}
+  .slot .empty-note{color:var(--muted);font-size:13px;}
 
-  .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
-  @media(max-width:720px){.grid{grid-template-columns:1fr}}
-  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);padding:18px}
-  .card.full{grid-column:1/-1}
-  .card h3{margin:0 0 14px;font-size:13px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);font-weight:700}
-  .row{display:flex;justify-content:space-between;gap:16px;padding:8px 0;border-top:1px solid var(--line);font-size:14px}
-  .row:first-of-type{border-top:none}
-  .row .k{color:var(--muted)} .row .v{font-weight:600;text-align:right}
-  table{width:100%;border-collapse:collapse;font-size:14px}
-  th,td{text-align:left;padding:9px 8px;border-bottom:1px solid var(--line)}
-  th{font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);font-weight:700}
-  tr:last-child td{border-bottom:none}
-  .pill{display:inline-block;padding:2px 9px;border-radius:999px;font-size:12px;font-weight:600}
-  .pill.ok{background:#e9f9ef;color:var(--ok)} .pill.warn{background:#fef3e2;color:var(--warn)}
-  .pill.danger{background:#fdeaea;color:var(--danger)}
+  .empty{text-align:center;color:var(--muted);padding:50px 20px;}
+  .empty h2{color:var(--ink);font-weight:600;}
 
-  /* document topic slots */
-  .slots{display:grid;grid-template-columns:1fr 1fr;gap:14px}
-  @media(max-width:640px){.slots{grid-template-columns:1fr}}
-  .slot{border:1px solid var(--line);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:8px}
-  .slot.filled{border-color:#cfe0ff;background:#fafcff}
-  .slot .label{font-weight:650;font-size:14px;display:flex;align-items:center;gap:8px}
-  .slot .filemeta{font-size:12px;color:var(--muted)}
-  .slot .actions{display:flex;gap:8px;margin-top:auto;flex-wrap:wrap}
-  .slot a.view{color:var(--accent);text-decoration:none;font-weight:600;font-size:14px;word-break:break-all}
-  .slot .empty-note{color:var(--muted);font-size:13px}
+  .cal-head{display:flex;align-items:center;gap:12px;margin-bottom:14px;}
+  .cal-head h2{margin:0;font-size:18px;min-width:170px;}
+  .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:5px;}
+  .weekday{font-size:11px;font-weight:700;color:var(--muted);text-align:center;text-transform:uppercase;padding:4px;}
+  .cal-cell{min-height:80px;border:1px solid var(--line);border-radius:9px;padding:5px;background:#fff;overflow:hidden;}
+  .cal-cell.dim{background:#fafbfc;}
+  .cal-cell.today{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset;}
+  .cal-daynum{font-weight:700;font-size:12px;margin-bottom:3px;color:var(--muted);}
+  .cal-cell.today .cal-daynum{color:var(--accent);}
+  .cal-task{font-size:11px;background:var(--accent-soft);color:var(--accent);border-radius:5px;
+    padding:2px 5px;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;}
+  .cal-task.overdue{background:#fdeaea;color:var(--danger);}
+  .cal-task.done{background:#eef1f4;color:var(--muted);text-decoration:line-through;}
 
-  .empty{text-align:center;color:var(--muted);padding:70px 20px}
-  .empty h2{color:var(--ink);font-weight:600}
+  .filterbar{display:flex;gap:8px;align-items:center;margin:6px 0 4px;flex-wrap:wrap;}
+  .filterbar .seg{display:flex;border:1px solid var(--line);border-radius:9px;overflow:hidden;}
+  .filterbar .seg button{border:none;border-radius:0;padding:7px 13px;background:#fff;color:var(--muted);}
+  .filterbar .seg button.active{background:var(--accent-soft);color:var(--accent);}
+  .todo-item{display:flex;align-items:flex-start;gap:12px;padding:11px 5px;border-top:1px solid var(--line);}
+  .todo-item:first-child{border-top:none;}
+  .todo-check{width:18px;height:18px;cursor:pointer;flex:none;margin-top:2px;}
+  .todo-main{flex:1;min-width:0;}
+  .todo-title{font-weight:600;font-size:14px;}
+  .todo-title.done{text-decoration:line-through;color:var(--muted);}
+  .todo-meta{font-size:12px;color:var(--muted);margin-top:3px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
+  .tag{background:#eef1f4;color:var(--muted);border-radius:999px;padding:1px 8px;font-size:11px;font-weight:600;}
 
-  /* main nav */
-  .mainnav{display:flex;gap:8px;margin-bottom:16px}
-  .navbtn{padding:9px 18px;border-radius:10px;border:1px solid var(--line);background:#fff;font-weight:600;color:var(--muted);cursor:pointer}
-  .navbtn.active{background:var(--accent);border-color:var(--accent);color:#fff}
-
-  /* calendar */
-  .cal-head{display:flex;align-items:center;gap:12px;margin-bottom:14px}
-  .cal-head h2{margin:0;font-size:18px;min-width:170px}
-  .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}
-  .weekday{font-size:11px;font-weight:700;color:var(--muted);text-align:center;text-transform:uppercase;padding:4px}
-  .cal-cell{min-height:88px;border:1px solid var(--line);border-radius:10px;padding:6px;background:#fff;overflow:hidden}
-  .cal-cell.dim{background:#fafbfc}
-  .cal-cell.today{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset}
-  .cal-daynum{font-weight:700;font-size:12px;margin-bottom:4px;color:var(--muted)}
-  .cal-cell.today .cal-daynum{color:var(--accent)}
-  .cal-task{font-size:11px;background:var(--accent-soft);color:var(--accent);border-radius:6px;
-    padding:2px 6px;margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
-  .cal-task.overdue{background:#fdeaea;color:var(--danger)}
-  .cal-task.done{background:#eef1f4;color:var(--muted);text-decoration:line-through}
-
-  /* todo list */
-  .filterbar{display:flex;gap:8px;align-items:center;margin:6px 0 4px;flex-wrap:wrap}
-  .filterbar .seg{display:flex;border:1px solid var(--line);border-radius:9px;overflow:hidden}
-  .filterbar .seg button{border:none;border-radius:0;padding:8px 14px;background:#fff;color:var(--muted)}
-  .filterbar .seg button.active{background:var(--accent-soft);color:var(--accent)}
-  .todo-item{display:flex;align-items:flex-start;gap:12px;padding:12px 6px;border-top:1px solid var(--line)}
-  .todo-item:first-child{border-top:none}
-  .todo-check{width:20px;height:20px;cursor:pointer;flex:none;margin-top:1px}
-  .todo-main{flex:1;min-width:0}
-  .todo-title{font-weight:600}
-  .todo-title.done{text-decoration:line-through;color:var(--muted)}
-  .todo-meta{font-size:12px;color:var(--muted);margin-top:3px;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-  .tag{background:#eef1f4;color:var(--muted);border-radius:999px;padding:1px 8px;font-size:11px;font-weight:600}
-
-  /* rent tracker */
-  .kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:18px}
-  @media(max-width:760px){.kpis{grid-template-columns:repeat(2,1fr)}}
-  .kpi{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;box-shadow:var(--shadow)}
-  .kpi .lab{font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);font-weight:700}
-  .kpi .num{font-size:22px;font-weight:700;margin-top:6px;letter-spacing:-.5px}
-  .kpi .num.ok{color:var(--ok)} .kpi .num.danger{color:var(--danger)} .kpi .num.accent{color:var(--accent)}
-  .sheet-title{margin:2px 0 2px;font-size:20px}
-  .sheet-sub{color:var(--muted);font-size:14px;margin-bottom:16px}
-  .sheet-wrap{overflow-x:auto}
-  table.sheet{width:100%;border-collapse:collapse;font-size:13px;min-width:760px}
-  table.sheet th,table.sheet td{padding:9px 10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+  .kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:11px;margin-bottom:16px;}
+  @media(max-width:760px){.kpis{grid-template-columns:repeat(2,1fr);}}
+  .kpi{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:13px;box-shadow:var(--shadow);}
+  .kpi .lab{font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);font-weight:700;}
+  .kpi .num{font-size:21px;font-weight:700;margin-top:5px;letter-spacing:-.5px;}
+  .kpi .num.ok{color:var(--ok);} .kpi .num.danger{color:var(--danger);} .kpi .num.accent{color:var(--accent);}
+  .sheet-title{margin:2px 0 2px;font-size:20px;}
+  .sheet-sub{color:var(--muted);font-size:14px;margin-bottom:14px;}
+  .sheet-wrap{overflow-x:auto;}
+  table.sheet{width:100%;border-collapse:collapse;font-size:13px;min-width:760px;}
+  table.sheet th,table.sheet td{padding:8px 9px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top;}
   table.sheet th{font-size:11px;text-transform:uppercase;letter-spacing:.3px;color:var(--muted);
-    font-weight:700;position:sticky;top:0;background:#fff}
-  table.sheet td.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
-  table.sheet tr.addr-start td{border-top:2px solid #e8edf3}
-  table.sheet .addr{font-weight:650}
-  table.sheet tfoot td{font-weight:700;border-top:2px solid var(--ink);border-bottom:none}
-  .st{display:inline-block;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:700;white-space:nowrap}
-  .st.green{background:#e9f9ef;color:var(--ok)} .st.red{background:#fdeaea;color:var(--danger)}
-  .st.amber{background:#fef3e2;color:var(--warn)} .st.blue{background:#eef3ff;color:var(--accent)}
-  .st.grey{background:#eef1f4;color:var(--muted)}
-  .note-cell{color:var(--muted);font-size:12px;max-width:260px}
-  .secret{cursor:pointer;color:var(--accent);font-weight:600;letter-spacing:1px}
-  .secret.shown{letter-spacing:0;font-family:ui-monospace,Menlo,monospace;font-size:12px}
-  .reco{color:var(--accent);font-size:12px;max-width:240px}
+    font-weight:700;position:sticky;top:0;background:#fff;}
+  table.sheet td.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;}
+  table.sheet tr.addr-start td{border-top:2px solid #e8edf3;}
+  table.sheet .addr{font-weight:650;}
+  table.sheet tfoot td{font-weight:700;border-top:2px solid var(--ink);border-bottom:none;}
+  .st{display:inline-block;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:700;white-space:nowrap;}
+  .st.green{background:#e9f9ef;color:var(--ok);} .st.red{background:#fdeaea;color:var(--danger);}
+  .st.amber{background:#fef3e2;color:var(--warn);} .st.blue{background:#eef3ff;color:var(--accent);}
+  .st.grey{background:#eef1f4;color:var(--muted);}
+  .note-cell{color:var(--muted);font-size:12px;max-width:240px;}
+  .secret{cursor:pointer;color:var(--accent);font-weight:600;letter-spacing:1px;}
+  .secret.shown{letter-spacing:0;font-family:ui-monospace,Menlo,monospace;font-size:12px;}
+  .reco{color:var(--accent);font-size:12px;max-width:220px;}
 
-  /* modal */
   .backdrop{position:fixed;inset:0;background:rgba(16,24,40,.45);display:none;align-items:flex-start;
-    justify-content:center;z-index:50;padding:40px 16px;overflow-y:auto}
-  .backdrop.open{display:flex}
-  .modal{background:#fff;border-radius:16px;width:100%;max-width:640px;box-shadow:0 20px 60px rgba(16,24,40,.3)}
-  .modal-head{padding:18px 22px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center}
-  .modal-head h2{margin:0;font-size:17px}
-  .modal-body{padding:22px;max-height:66vh;overflow-y:auto}
-  .modal-foot{padding:16px 22px;border-top:1px solid var(--line);display:flex;justify-content:flex-end;gap:10px}
-  .fieldset{border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:16px}
-  .fieldset legend{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);padding:0 6px}
-  .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-  .form-grid .field input,.form-grid .field select{width:100%}
-  .form-grid .span2{grid-column:1/-1}
-  .util-row{display:grid;grid-template-columns:1fr 1fr 1.2fr 1fr auto;gap:8px;margin-bottom:8px;align-items:center}
-  .util-row input{width:100%;min-width:0}
-  .icon-btn{border:none;background:none;color:var(--muted);cursor:pointer;font-size:18px;padding:4px}
-  .x{background:none;border:none;font-size:22px;cursor:pointer;color:var(--muted);line-height:1}
-  .muted-note{color:var(--muted);font-size:13px}
-  .checkrow{display:flex;align-items:center;gap:10px;margin-bottom:12px}
-  .checkrow input{width:auto}
+    justify-content:center;z-index:60;padding:40px 16px;overflow-y:auto;}
+  .backdrop.open{display:flex;}
+  .modal{background:#fff;border-radius:16px;width:100%;max-width:640px;box-shadow:0 20px 60px rgba(16,24,40,.3);}
+  .modal-head{padding:17px 22px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;}
+  .modal-head h2{margin:0;font-size:17px;}
+  .modal-body{padding:22px;max-height:66vh;overflow-y:auto;}
+  .modal-foot{padding:16px 22px;border-top:1px solid var(--line);display:flex;justify-content:flex-end;gap:10px;}
+  .fieldset{border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:14px;}
+  .fieldset legend{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);padding:0 6px;}
+  .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:11px;}
+  .form-grid .field input,.form-grid .field select{width:100%;}
+  .form-grid .span2{grid-column:1/-1;}
+  .field{display:flex;flex-direction:column;gap:5px;}
+  .field label{font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;}
+  .util-row{display:grid;grid-template-columns:1fr 1fr 1.2fr 1fr auto;gap:7px;margin-bottom:7px;align-items:center;}
+  .util-row input{width:100%;min-width:0;}
+  .icon-btn{border:none;background:none;color:var(--muted);cursor:pointer;font-size:18px;padding:3px;}
+  .x{background:none;border:none;font-size:22px;cursor:pointer;color:var(--muted);line-height:1;}
+  .muted-note{color:var(--muted);font-size:13px;}
+  .checkrow{display:flex;align-items:center;gap:10px;margin-bottom:12px;}
+  .checkrow input{width:auto;}
 </style>
 </head>
 <body>
 
-<!-- LOGIN -->
-<div id="loginView">
-  <div class="login-screen">
-    <h2>Property Manager</h2>
-    <p>Enter your team password to continue.</p>
+<!-- Always-present map -->
+<div id="mapWrap"><div id="mapEl"></div></div>
+
+<!-- Login overlay -->
+<div id="loginOverlay">
+  <div class="login-glass">
+    <div class="logo-row">
+      <div class="logo-box">P</div>
+      <h2>Property Manager</h2>
+    </div>
+    <p>Sign in to access your portfolio</p>
     <div class="login-err" id="loginErr"></div>
     <input type="password" id="loginPw" placeholder="Password" onkeydown="if(event.key==='Enter')doLogin()">
-    <button class="primary" onclick="doLogin()">Sign in</button>
+    <button class="sign-in-btn" onclick="doLogin()">Sign in</button>
   </div>
 </div>
 
-<!-- APP -->
+<!-- App -->
 <div id="appView" style="display:none">
   <header>
     <div class="logo">P</div>
@@ -205,39 +278,42 @@
     <div class="right">
       <span id="roleBadge"></span>
       <button class="ghost" id="backupBtn" onclick="downloadBackup()" style="display:none">Backup</button>
-      <label class="ghost" id="restoreBtn" style="display:none;cursor:pointer">Restore<input type="file" hidden accept=".zip" onchange="uploadRestore(event)"></label>
+      <label class="ghost" id="restoreBtn" style="display:none;cursor:pointer">Restore
+        <input type="file" hidden accept=".zip" onchange="uploadRestore(event)">
+      </label>
       <button class="ghost" onclick="doLogout()">Sign out</button>
     </div>
   </header>
 
-  <div class="wrap">
-    <div class="mainnav">
-      <button class="navbtn active" id="navProps" onclick="setView('properties')">Properties</button>
-      <button class="navbtn" id="navCal" onclick="setView('calendar')">To-Do &amp; Calendar</button>
-      <button class="navbtn" id="navSheet" onclick="setView('sheet')">Rent Tracker</button>
-    </div>
-
-    <div id="propsView">
-      <div class="toolbar">
-        <div class="field grow">
-          <label for="picker">Property address</label>
-          <select id="picker" onchange="selectProperty(this.value)">
-            <option value="">Select an address…</option>
-          </select>
-        </div>
-        <button class="primary" id="addBtn" onclick="openModal()">+ Add property</button>
-        <button id="editBtn" onclick="editCurrent()" disabled>Edit</button>
-        <button id="delBtn" class="danger" onclick="deleteCurrent()" disabled>Delete</button>
-      </div>
-      <div id="detail"></div>
-    </div>
-
-    <div id="calView" style="display:none"></div>
-    <div id="sheetView" style="display:none"></div>
+  <div class="nav-bar">
+    <button class="navbtn active" id="navProps" onclick="setView('properties')">Properties</button>
+    <button class="navbtn" id="navCal" onclick="setView('calendar')">To-Do &amp; Calendar</button>
+    <button class="navbtn" id="navSheet" onclick="setView('sheet')">Rent Tracker</button>
   </div>
+
+  <div id="propsView"></div>
+  <div id="calView" style="display:none"></div>
+  <div id="sheetView" style="display:none"></div>
 </div>
 
-<!-- MODAL -->
+<!-- Map floating action buttons -->
+<div class="map-fab" id="mapFab" style="display:none">
+  <button class="add-btn" id="addBtn" onclick="openModal()" style="display:none">+ Add property</button>
+  <button class="fit-btn" onclick="fitBounds()" title="Show all properties">⊞ All</button>
+</div>
+
+<!-- Property side panel -->
+<div id="propPanel">
+  <div class="panel-head">
+    <button class="panel-back" onclick="closePanel()">‹</button>
+    <h2 id="panelTitle">Property</h2>
+    <button id="panelEditBtn" onclick="editCurrent()" style="display:none;font-size:13px;padding:7px 12px">Edit</button>
+    <button id="panelDelBtn" class="danger" onclick="deleteCurrent()" style="display:none;font-size:13px;padding:7px 12px">Delete</button>
+  </div>
+  <div class="panel-body" id="panelBody"></div>
+</div>
+
+<!-- Property modal -->
 <div class="backdrop" id="backdrop">
   <div class="modal">
     <div class="modal-head">
@@ -285,7 +361,8 @@
       </fieldset>
       <fieldset class="fieldset">
         <legend>Occupancy</legend>
-        <div class="checkrow"><input type="checkbox" id="f_occ_on" onchange="toggleOcc()"><label for="f_occ_on" style="font-weight:600">Property is occupied</label></div>
+        <div class="checkrow"><input type="checkbox" id="f_occ_on" onchange="toggleOcc()">
+          <label for="f_occ_on" style="font-weight:600">Property is occupied</label></div>
         <div id="occFields" class="form-grid" style="display:none">
           <div class="field"><label>Tenant name</label><input id="f_occ_tenant"></div>
           <div class="field"><label>Monthly rent ($)</label><input id="f_occ_rent" inputmode="decimal"></div>
@@ -302,7 +379,7 @@
   </div>
 </div>
 
-<!-- TASK MODAL -->
+<!-- Task modal -->
 <div class="backdrop" id="taskBackdrop">
   <div class="modal" style="max-width:480px">
     <div class="modal-head">
@@ -337,153 +414,252 @@ const _now=new Date();
 let calYear=_now.getFullYear(), calMonth=_now.getMonth();
 let taskStatusFilter='open', taskPropFilter='', taskDayFilter='';
 
-/* ---------------- API ---------------- */
+/* ── Map state ── */
+let map=null, mapAnimDone=false, pendingPins=false;
+let propertyMarkers={};
+let geocodeCache=JSON.parse(localStorage.getItem('pm_geo_cache')||'{}');
+
+/* ── API ── */
 async function api(path, opts={}){
-  const r = await fetch(path, Object.assign({headers:{'Content-Type':'application/json'}}, opts));
+  const r=await fetch(path, Object.assign({headers:{'Content-Type':'application/json'}}, opts));
   if(r.status===401){ showLogin(); throw new Error('unauthorized'); }
-  const ct = r.headers.get('Content-Type')||'';
-  const body = ct.includes('json') ? await r.json() : null;
+  const ct=r.headers.get('Content-Type')||'';
+  const body=ct.includes('json')?await r.json():null;
   if(!r.ok) throw new Error((body&&body.error)||('HTTP '+r.status));
   return body;
 }
 
-/* ---------------- auth ---------------- */
+/* ── Map init ── */
+function initMap(){
+  map=L.map('mapEl',{zoomControl:false,attributionControl:false}).setView([20,0],2);
+
+  // Satellite base
+  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+    {maxZoom:19}).addTo(map);
+
+  // Labels overlay
+  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
+    {maxZoom:19,opacity:.8}).addTo(map);
+
+  L.control.zoom({position:'bottomright'}).addTo(map);
+
+  // Fly from space to DC
+  setTimeout(()=>{
+    map.flyTo([38.9072,-77.0369],13,{duration:3.8,easeLinearity:.18});
+    map.once('moveend',()=>{
+      mapAnimDone=true;
+      if(pendingPins){ pendingPins=false; dropAllPins(); }
+    });
+  },500);
+}
+
+/* ── Auth ── */
 async function doLogin(){
-  const pw = document.getElementById('loginPw').value;
+  const pw=document.getElementById('loginPw').value;
   document.getElementById('loginErr').textContent='';
   try{
     await api('/api/login',{method:'POST',body:JSON.stringify({password:pw})});
     await boot();
-  }catch(e){ document.getElementById('loginErr').textContent = e.message; }
+  }catch(e){ document.getElementById('loginErr').textContent=e.message; }
 }
-async function doLogout(){ try{await api('/api/logout',{method:'POST'});}catch{} showLogin(); }
+
+async function doLogout(){
+  try{ await api('/api/logout',{method:'POST'}); }catch{}
+  showLogin();
+}
+
 function showLogin(){
   document.getElementById('appView').style.display='none';
-  document.getElementById('loginView').style.display='block';
+  document.getElementById('mapFab').style.display='none';
+  closePanel();
+  Object.values(propertyMarkers).forEach(m=>map&&map.removeLayer(m));
+  propertyMarkers={};
+  const ov=document.getElementById('loginOverlay');
+  ov.style.display='flex';
+  ov.classList.remove('fade-out');
   document.getElementById('loginPw').value='';
 }
 
 async function boot(){
-  const b = await api('/api/bootstrap');
+  const b=await api('/api/bootstrap');
   ROLE=b.role; TOPICS=b.topics; LEASE=b.leaseTopic;
-  document.getElementById('loginView').style.display='none';
+
+  const ov=document.getElementById('loginOverlay');
+  ov.classList.add('fade-out');
+  setTimeout(()=>{ ov.style.display='none'; },600);
+
   document.getElementById('appView').style.display='block';
+  document.getElementById('mapFab').style.display='flex';
+
   const badge=document.getElementById('roleBadge');
   badge.className='role-badge '+ROLE;
-  badge.textContent = ROLE==='admin'?'Admin':'Worker';
-  document.getElementById('addBtn').style.display = ROLE==='admin'?'':'none';
-  document.getElementById('backupBtn').style.display = ROLE==='admin'?'':'none';
-  document.getElementById('restoreBtn').style.display = ROLE==='admin'?'':'none';
+  badge.textContent=ROLE==='admin'?'Admin':'Worker';
+  document.getElementById('addBtn').style.display=ROLE==='admin'?'':'none';
+  document.getElementById('backupBtn').style.display=ROLE==='admin'?'':'none';
+  document.getElementById('restoreBtn').style.display=ROLE==='admin'?'':'none';
+
   await refreshList();
   await loadTasks();
+
+  if(mapAnimDone) dropAllPins();
+  else pendingPins=true;
 }
 
 function downloadBackup(){ window.location='/api/backup'; }
+
 async function uploadRestore(e){
   const file=e.target.files[0]; e.target.value='';
   if(!file) return;
   if(!confirm('Restore from this backup? It overwrites current data on the server.')) return;
-  const fd=new FormData(); fd.append('file', file);
+  const fd=new FormData(); fd.append('file',file);
   try{
     const r=await fetch('/api/restore',{method:'POST',body:fd});
     const j=await r.json();
     if(!r.ok) throw new Error(j.error||'Restore failed');
     alert('Restored '+j.restored+' files. Reloading.');
-    current=null; await refreshList(); await loadTasks(); render();
+    current=null; closePanel();
+    await refreshList(); await loadTasks();
+    dropAllPins();
   }catch(err){ alert(err.message); }
 }
 
-/* ---------------- view switch ---------------- */
+/* ── View switch ── */
 function setView(v){
   view=v;
-  document.getElementById('navProps').classList.toggle('active', v==='properties');
-  document.getElementById('navCal').classList.toggle('active', v==='calendar');
-  document.getElementById('navSheet').classList.toggle('active', v==='sheet');
-  document.getElementById('propsView').style.display = v==='properties'?'':'none';
-  document.getElementById('calView').style.display = v==='calendar'?'':'none';
-  document.getElementById('sheetView').style.display = v==='sheet'?'':'none';
+  document.getElementById('navProps').classList.toggle('active',v==='properties');
+  document.getElementById('navCal').classList.toggle('active',v==='calendar');
+  document.getElementById('navSheet').classList.toggle('active',v==='sheet');
+  document.getElementById('propsView').style.display=v==='properties'?'':'none';
+  document.getElementById('calView').style.display=v==='calendar'?'':'none';
+  document.getElementById('sheetView').style.display=v==='sheet'?'':'none';
+  document.getElementById('mapFab').style.display=(v==='properties'&&document.getElementById('appView').style.display!=='none')?'flex':'none';
+  if(v!=='properties') closePanel();
   if(v==='calendar') renderCalendar();
   if(v==='sheet') renderSheet();
 }
 
-/* ---------------- list ---------------- */
+/* ── Properties list ── */
 async function refreshList(){
-  list = await api('/api/properties');
-  const sel=document.getElementById('picker');
-  const keep = current?current.id:'';
-  sel.innerHTML='<option value="">Select an address…</option>'+
-    list.map(p=>`<option value="${p.id}" ${p.id===keep?'selected':''}>${esc(p.address)}</option>`).join('');
+  list=await api('/api/properties');
 }
 
 async function selectProperty(id){
-  if(!id){ current=null; setBtns(); render(); return; }
-  current = await api('/api/properties/'+id);
-  setBtns();
-  render();
-}
-function setBtns(){
-  document.getElementById('editBtn').disabled = !current;
-  document.getElementById('delBtn').disabled = !current || ROLE!=='admin';
-  document.getElementById('delBtn').style.display = ROLE==='admin'?'':'none';
+  if(!id){ current=null; closePanel(); return; }
+  current=await api('/api/properties/'+id);
+  currentTab='overview';
+  openPanel();
 }
 
-/* ---------------- dates ---------------- */
-function parseDate(s){ if(!s) return null; const d=new Date(s+'T00:00:00'); return isNaN(d)?null:d; }
-function today(){ const d=new Date(); d.setHours(0,0,0,0); return d; }
-function daysUntil(s){ const d=parseDate(s); return d?Math.round((d-today())/86400000):null; }
-function fmt(s){ const d=parseDate(s); return d?d.toLocaleDateString(undefined,{year:'numeric',month:'short',day:'numeric'}):'—'; }
-function pill(s){ const n=daysUntil(s); if(n===null) return '<span class="pill">—</span>';
-  if(n<0) return `<span class="pill danger">${-n}d overdue</span>`;
-  if(n<=14) return `<span class="pill warn">in ${n}d</span>`;
-  return `<span class="pill ok">in ${n}d</span>`; }
-function fmtSize(n){ if(n==null)return'—'; if(n<1024)return n+' B'; if(n<1048576)return (n/1024).toFixed(0)+' KB'; return (n/1048576).toFixed(1)+' MB'; }
-
-/* ---------------- render ---------------- */
-function render(){
-  const el=document.getElementById('detail');
-  if(!current){
-    el.innerHTML = list.length
-      ? `<div class="empty"><h2>Select a property</h2><p>Pick an address above to see its details, occupancy, and documents.</p></div>`
-      : `<div class="empty"><h2>No properties yet</h2><p>${ROLE==='admin'?'Click “Add property” to get started.':'Ask your admin to add a property.'}</p></div>`;
-    return;
+/* ── Map pins ── */
+async function dropAllPins(){
+  Object.values(propertyMarkers).forEach(m=>map.removeLayer(m));
+  propertyMarkers={};
+  for(let i=0;i<list.length;i++){
+    setTimeout(()=>geocodeAndPin(list[i]), i*300);
   }
-  const p=current;
+}
+
+async function geocodeAndPin(p){
+  let coords=geocodeCache[p.address];
+  if(!coords){
+    try{
+      const q=encodeURIComponent(p.address);
+      const r=await fetch(`https://nominatim.openstreetmap.org/search?q=${q}&format=json&limit=1&countrycodes=us`);
+      const data=await r.json();
+      if(data.length>0){
+        coords=[parseFloat(data[0].lat),parseFloat(data[0].lon)];
+        geocodeCache[p.address]=coords;
+        localStorage.setItem('pm_geo_cache',JSON.stringify(geocodeCache));
+      }
+    }catch{ return; }
+  }
+  if(!coords) return;
+
+  const icon=L.divIcon({
+    className:'',
+    html:`<div class="map-pin"></div>`,
+    iconSize:[26,36],iconAnchor:[13,36],popupAnchor:[0,-38]
+  });
+
+  const label=p.nickname||p.address.split(',')[0];
+  const marker=L.marker(coords,{icon}).addTo(map);
+  marker.bindTooltip(label,{permanent:false,direction:'top',className:'pin-tip'});
+  marker.on('click',()=>selectProperty(p.id));
+  propertyMarkers[p.id]=marker;
+}
+
+function fitBounds(){
+  const pts=Object.values(propertyMarkers).map(m=>m.getLatLng());
+  if(pts.length===0) return;
+  if(pts.length===1){ map.flyTo(pts[0],14,{duration:1}); return; }
+  map.flyToBounds(L.latLngBounds(pts).pad(0.2),{duration:1.2});
+}
+
+/* ── Side panel ── */
+function openPanel(){
+  if(!current) return;
+  document.getElementById('panelTitle').textContent=current.nickname||current.address;
+  document.getElementById('panelEditBtn').style.display=ROLE==='admin'?'':'none';
+  document.getElementById('panelDelBtn').style.display=ROLE==='admin'?'':'none';
+  const body=document.getElementById('panelBody');
+  body.innerHTML=panelTabsHTML()+`<div id="tabBody"></div>`;
+  renderTab();
+  document.getElementById('propPanel').classList.add('open');
+  // Pan map to pin
+  const m=propertyMarkers[current.id];
+  if(m) map.panTo(m.getLatLng(),{animate:true,duration:.5});
+}
+
+function closePanel(){
+  document.getElementById('propPanel').classList.remove('open');
+  current=null;
+}
+
+function panelTabsHTML(){
   const tabs=['overview','occupancy','documents','tasks'];
-  const tabLabels={overview:'Overview',occupancy:'Occupancy',documents:'Documents',tasks:'Tasks'};
-  el.innerHTML = `
-    <div class="addr-head">
-      <h2>${esc(p.address)}</h2>
-      <span class="sub">${esc(p.nickname||'')}${p.nickname?' · ':''}${esc(p.type||'')}${p.occupancy&&p.occupancy.occupied?' · <strong>Occupied</strong>':' · Vacant'}</span>
-    </div>
-    <div class="tabs">${tabs.map(t=>`<div class="tab ${t===currentTab?'active':''}" onclick="setTab('${t}')">${tabLabels[t]}</div>`).join('')}</div>
-    <div id="tabBody"></div>`;
+  const labels={overview:'Overview',occupancy:'Occupancy',documents:'Documents',tasks:'Tasks'};
+  const sub=current.nickname?`${esc(current.nickname)} · `:'';
+  return `<div class="panel-addr-sub">${sub}${esc(current.type||'')} · ${current.occupancy&&current.occupancy.occupied?'<strong>Occupied</strong>':'Vacant'}</div>
+    <div class="tabs">${tabs.map(t=>`<div class="tab ${t===currentTab?'active':''}" onclick="setTab('${t}')">${labels[t]}</div>`).join('')}</div>`;
+}
+
+/* ── Render ── */
+function render(){
+  if(!current) return;
+  const body=document.getElementById('panelBody');
+  if(!body) return;
+  body.innerHTML=panelTabsHTML()+`<div id="tabBody"></div>`;
   renderTab();
 }
-function setTab(t){ currentTab=t; renderTab();
-  document.querySelectorAll('.tab').forEach(e=>e.classList.toggle('active', e.textContent.toLowerCase()===t)); }
+
+function setTab(t){
+  currentTab=t; renderTab();
+  document.querySelectorAll('#propPanel .tab').forEach(e=>e.classList.toggle('active',e.textContent.toLowerCase()===t));
+}
 
 function renderTab(){
-  const p=current, host=document.getElementById('tabBody');
-  if(currentTab==='overview') host.innerHTML = overviewHTML(p);
-  else if(currentTab==='occupancy') host.innerHTML = occupancyHTML(p);
-  else if(currentTab==='documents') host.innerHTML = documentsHTML(p);
-  else host.innerHTML = propTasksHTML(p);
+  const host=document.getElementById('tabBody');
+  if(!host||!current) return;
+  if(currentTab==='overview') host.innerHTML=overviewHTML(current);
+  else if(currentTab==='occupancy') host.innerHTML=occupancyHTML(current);
+  else if(currentTab==='documents') host.innerHTML=documentsHTML(current);
+  else host.innerHTML=propTasksHTML(current);
 }
 
 function propTasksHTML(p){
-  const mine = tasks.filter(t=>t.propertyId===p.id)
+  const mine=tasks.filter(t=>t.propertyId===p.id)
     .sort((a,b)=>(a.done-b.done)||((a.due||'9999')>(b.due||'9999')?1:-1));
-  const rows = mine.length ? mine.map(todoItemHTML).join('')
-    : `<p class="muted-note">No tasks for this property yet.</p>`;
+  const rows=mine.length?mine.map(todoItemHTML).join('')
+    :`<p class="muted-note">No tasks for this property yet.</p>`;
   return `<div class="card full">
     <h3 style="display:flex;justify-content:space-between;align-items:center">Tasks for this property
-      <button class="primary" style="font-size:13px;padding:7px 12px" onclick="openTaskModal(null,'${p.id}')">+ Add task</button></h3>
+      <button class="primary" style="font-size:12px;padding:6px 11px" onclick="openTaskModal(null,'${p.id}')">+ Add task</button></h3>
     ${rows}</div>`;
 }
 
 function unitsCardHTML(p){
-  if(!p.units || !p.units.length) return '';
-  const rows = p.units.map(u=>`<tr>
+  if(!p.units||!p.units.length) return '';
+  const rows=p.units.map(u=>`<tr>
     <td><strong>${esc(u.unit||'—')}</strong></td>
     <td>${esc(u.type||'—')}</td>
     <td>${esc(u.bedrooms||'—')}</td>
@@ -492,10 +668,10 @@ function unitsCardHTML(p){
     <td><span class="st ${statusClass(u.status)}">${esc(u.status||'—')}</span></td>
     <td>${esc(u.tenant||'—')}</td>
   </tr>`).join('');
-  const occ = p.units.filter(u=>/paid|occupied|non-?payment|squatter/i.test(u.status||'')).length;
+  const occ=p.units.filter(u=>/paid|occupied|non-?payment|squatter/i.test(u.status||'')).length;
   const billed=p.units.reduce((s,u)=>s+(parseFloat(String(u.rent).replace(/[^0-9.\-]/g,''))||0),0);
   return `<div class="card full"><h3>Units — ${p.units.length} total, ${occ} occupied · ${money(billed)}/mo billed</h3>
-    <div class="sheet-wrap"><table class="sheet" style="min-width:640px">
+    <div class="sheet-wrap"><table class="sheet" style="min-width:600px">
       <thead><tr><th>Unit</th><th>Type</th><th>Beds</th><th>Rent</th><th>Paid</th><th>Status</th><th>Tenant</th></tr></thead>
       <tbody>${rows}</tbody>
     </table></div></div>`;
@@ -508,7 +684,7 @@ function overviewHTML(p){
   (p.utilities||[]).forEach(u=>push(`${u.type} payment`,u.pay));
   if(p.occupancy&&p.occupancy.occupied) push('Lease ends',p.occupancy.leaseEnd);
   ev.sort((a,b)=>a.n-b.n);
-  const alerts = ev.map(e=>{const c=e.n<0?'danger':'warn';
+  const alerts=ev.map(e=>{const c=e.n<0?'danger':'warn';
     const w=e.n<0?`${-e.n} days overdue`:`due in ${e.n} day${e.n===1?'':'s'}`;
     return `<div class="alert ${c}"><span class="dot"></span><strong>${esc(e.l)}</strong> — ${w} (${fmt(e.d)})</div>`;}).join('');
   return `${alerts?`<div class="alerts">${alerts}</div>`:''}
@@ -533,21 +709,21 @@ function overviewHTML(p){
 }
 
 function accountsCardHTML(p){
-  const accts = p.utilities || [];
-  const body = accts.length ? accts.map(u=>`<tr>
+  const accts=p.utilities||[];
+  const body=accts.length?accts.map(u=>`<tr>
       <td><strong>${esc(u.type||'—')}</strong></td>
       <td>${esc(u.provider||'—')}</td>
       <td>${esc(u.unit||'')}</td>
       <td>${esc(u.account||'—')}</td>
       <td>${u.username?esc(u.username):'—'}</td>
       <td>${u.password
-            ? `<span class="secret" title="click to reveal" onclick="this.textContent=this.dataset.v;this.classList.add('shown');this.onclick=null" data-v="${esc(u.password)}">•••••••</span>`
-            : '—'}</td>
+        ?`<span class="secret" title="click to reveal" onclick="this.textContent=this.dataset.v;this.classList.add('shown');this.onclick=null" data-v="${esc(u.password)}">•••••••</span>`
+        :'—'}</td>
       <td>${u.website?`<a href="${esc(u.website)}" target="_blank">link</a>`:''}</td>
     </tr>`).join('')
-    : `<tr><td colspan="7" class="muted-note">No accounts on file.</td></tr>`;
+    :`<tr><td colspan="7" class="muted-note">No accounts on file.</td></tr>`;
   return `<div class="card full"><h3>Accounts &amp; utilities${accts.length?` — ${accts.length}`:''}</h3>
-    <div class="sheet-wrap"><table class="sheet" style="min-width:720px">
+    <div class="sheet-wrap"><table class="sheet" style="min-width:680px">
       <thead><tr><th>Service</th><th>Company</th><th>Unit</th><th>Account #</th><th>Username</th><th>Password</th><th>Web</th></tr></thead>
       <tbody>${body}</tbody>
     </table></div></div>`;
@@ -557,7 +733,7 @@ function occupancyHTML(p){
   const o=p.occupancy||{};
   if(!o.occupied){
     return `<div class="card"><h3>Occupancy</h3>
-      <p class="muted-note">This property is currently marked <strong>vacant</strong>. Use “Edit” to mark it occupied and record tenant &amp; lease details.</p></div>`;
+      <p class="muted-note">This property is currently marked <strong>vacant</strong>. Use "Edit" to mark it occupied.</p></div>`;
   }
   return `<div class="grid">
     <div class="card"><h3>Tenant &amp; lease</h3>
@@ -566,7 +742,7 @@ function occupancyHTML(p){
       <div class="row"><span class="k">Lease start</span><span class="v">${fmt(o.leaseStart)}</span></div>
       <div class="row"><span class="k">Lease end</span><span class="v">${fmt(o.leaseEnd)} ${pill(o.leaseEnd)}</span></div>
     </div>
-    <div class="card"><h3>Lease document</h3>${slotHTML(p, LEASE)}</div>
+    <div class="card"><h3>Lease document</h3>${slotHTML(p,LEASE)}</div>
   </div>`;
 }
 
@@ -576,9 +752,9 @@ function documentsHTML(p){
   </div>`;
 }
 
-function slotHTML(p, topic){
-  const d = p.docs && p.docs[topic.key];
-  const canDelete = ROLE==='admin';
+function slotHTML(p,topic){
+  const d=p.docs&&p.docs[topic.key];
+  const canDelete=ROLE==='admin';
   if(d){
     return `<div class="label">📄 ${esc(topic.label)}</div>
       <a class="view" href="/api/properties/${p.id}/docs/${topic.key}" target="_blank">${esc(d.name)}</a>
@@ -591,46 +767,40 @@ function slotHTML(p, topic){
   return `<div class="label">${esc(topic.label)}</div>
     <div class="empty-note">No file uploaded.</div>
     <div class="actions">
-      <label class="primary" style="cursor:pointer;display:inline-block;padding:8px 14px;border-radius:9px">Upload
+      <label class="primary" style="cursor:pointer;display:inline-block;padding:7px 13px;border-radius:9px">Upload
         <input type="file" hidden onchange="uploadDoc(event,'${topic.key}')"></label>
     </div>`;
 }
 
-/* ---------------- documents ---------------- */
-async function uploadDoc(e, topic){
+/* ── Documents ── */
+async function uploadDoc(e,topic){
   const file=e.target.files[0]; e.target.value='';
   if(!file) return;
-  if(file.size > 25*1024*1024){ alert('File too large (max 25 MB).'); return; }
-  const fd=new FormData(); fd.append('file', file);
+  if(file.size>25*1024*1024){ alert('File too large (max 25 MB).'); return; }
+  const fd=new FormData(); fd.append('file',file);
   try{
     const r=await fetch(`/api/properties/${current.id}/docs/${topic}`,{method:'POST',body:fd});
-    if(r.status===401){showLogin();return;}
+    if(r.status===401){ showLogin(); return; }
     if(!r.ok){ const j=await r.json().catch(()=>({})); throw new Error(j.error||'Upload failed'); }
-    current = await api('/api/properties/'+current.id);
+    current=await api('/api/properties/'+current.id);
     renderTab();
   }catch(err){ alert(err.message); }
 }
+
 async function deleteDoc(topic){
   if(!confirm('Delete this document?')) return;
   await api(`/api/properties/${current.id}/docs/${topic}`,{method:'DELETE'});
-  current = await api('/api/properties/'+current.id);
+  current=await api('/api/properties/'+current.id);
   renderTab();
 }
 
-/* ---------------- modal ---------------- */
-function toggleOcc(){ document.getElementById('occFields').style.display =
-  document.getElementById('f_occ_on').checked?'grid':'none'; }
-function addUtilRow(u={}){
-  const div=document.createElement('div'); div.className='util-row';
-  div.innerHTML=`<input placeholder="Type" value="${esc(u.type||'')}">
-    <input placeholder="Provider" value="${esc(u.provider||'')}">
-    <input placeholder="Account #" value="${esc(u.account||'')}">
-    <input type="date" value="${esc(u.pay||'')}">
-    <button class="icon-btn" onclick="this.parentElement.remove()">&times;</button>`;
-  document.getElementById('utilList').appendChild(div);
+/* ── Modal ── */
+function toggleOcc(){
+  document.getElementById('occFields').style.display=document.getElementById('f_occ_on').checked?'grid':'none';
 }
+
 function openModal(prop=null){
-  document.getElementById('modalTitle').textContent = prop?'Edit property':'Add property';
+  document.getElementById('modalTitle').textContent=prop?'Edit property':'Add property';
   const g=id=>document.getElementById(id);
   g('f_id').value=prop?prop.id:'';
   g('f_address').value=prop?.address||''; g('f_nickname').value=prop?.nickname||'';
@@ -648,15 +818,10 @@ function openModal(prop=null){
   g('f_occ_start').value=o.leaseStart||''; g('f_occ_end').value=o.leaseEnd||'';
   document.getElementById('backdrop').classList.add('open');
 }
+
 function closeModal(){ document.getElementById('backdrop').classList.remove('open'); }
 function editCurrent(){ if(current) openModal(current); }
 
-function collectUtils(){
-  return [...document.querySelectorAll('#utilList .util-row')].map(r=>{
-    const i=r.querySelectorAll('input');
-    return {type:i[0].value.trim(),provider:i[1].value.trim(),account:i[2].value.trim(),pay:i[3].value};
-  }).filter(u=>u.type||u.provider||u.account);
-}
 async function saveProperty(){
   const g=id=>document.getElementById(id).value;
   const address=g('f_address').trim();
@@ -675,23 +840,39 @@ async function saveProperty(){
   try{
     let saved;
     if(id){ saved=await api('/api/properties/'+id,{method:'PUT',body:JSON.stringify(payload)}); }
-    else  { saved=await api('/api/properties',{method:'POST',body:JSON.stringify(payload)}); }
+    else   { saved=await api('/api/properties',{method:'POST',body:JSON.stringify(payload)}); }
     closeModal();
+    // Clear geocache entry for this address so it re-geocodes if changed
+    if(id && current && current.address!==address) delete geocodeCache[current.address];
     await refreshList();
+    dropAllPins();
     await selectProperty(saved.id);
   }catch(e){ alert(e.message); }
 }
 
 async function deleteCurrent(){
   if(!current) return;
-  if(!confirm(`Delete “${current.address}” and all its documents?`)) return;
+  if(!confirm(`Delete "${current.address}" and all its documents?`)) return;
   await api('/api/properties/'+current.id,{method:'DELETE'});
+  if(propertyMarkers[current.id]){ map.removeLayer(propertyMarkers[current.id]); delete propertyMarkers[current.id]; }
   current=null; currentTab='overview';
-  await refreshList(); setBtns(); render();
+  closePanel();
+  await refreshList();
 }
 
-/* ---------------- tasks & calendar ---------------- */
-async function loadTasks(){ tasks = await api('/api/tasks'); }
+/* ── Dates ── */
+function parseDate(s){ if(!s) return null; const d=new Date(s+'T00:00:00'); return isNaN(d)?null:d; }
+function today(){ const d=new Date(); d.setHours(0,0,0,0); return d; }
+function daysUntil(s){ const d=parseDate(s); return d?Math.round((d-today())/86400000):null; }
+function fmt(s){ const d=parseDate(s); return d?d.toLocaleDateString(undefined,{year:'numeric',month:'short',day:'numeric'}):'—'; }
+function pill(s){ const n=daysUntil(s); if(n===null) return '<span class="pill">—</span>';
+  if(n<0) return `<span class="pill danger">${-n}d overdue</span>`;
+  if(n<=14) return `<span class="pill warn">in ${n}d</span>`;
+  return `<span class="pill ok">in ${n}d</span>`; }
+function fmtSize(n){ if(n==null)return'—'; if(n<1024)return n+' B'; if(n<1048576)return (n/1024).toFixed(0)+' KB'; return (n/1048576).toFixed(1)+' MB'; }
+
+/* ── Tasks & Calendar ── */
+async function loadTasks(){ tasks=await api('/api/tasks'); }
 function propName(pid){ if(!pid) return 'General'; const p=list.find(x=>x.id===pid); return p?(p.nickname||p.address):'(deleted property)'; }
 function isoDay(y,m,d){ return `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`; }
 
@@ -715,14 +896,13 @@ function renderCalendar(){
     const more=dayTasks.length>3?`<div class="cal-task" onclick="filterDay('${iso}')">+${dayTasks.length-3} more</div>`:'';
     cells+=`<div class="cal-cell ${iso===todayISO?'today':''}"><div class="cal-daynum">${d}</div>${chips}${more}</div>`;
   }
-  const canAdd=true;
   host.innerHTML=`
     <div class="cal-head">
       <button onclick="calStep(-1)">‹</button>
       <h2>${MONTHS[calMonth]} ${calYear}</h2>
       <button onclick="calStep(1)">›</button>
       <button onclick="calToday()">Today</button>
-      <div style="margin-left:auto">${canAdd?`<button class="primary" onclick="openTaskModal()">+ Add task</button>`:''}</div>
+      <div style="margin-left:auto"><button class="primary" onclick="openTaskModal()">+ Add task</button></div>
     </div>
     <div class="card full" style="margin-bottom:18px">
       <div class="cal-grid">${WD.map(w=>`<div class="weekday">${w}</div>`).join('')}${cells}</div>
@@ -744,9 +924,10 @@ function renderCalendar(){
     </div>`;
   renderTodoList();
 }
+
 function calStep(n){ calMonth+=n; if(calMonth<0){calMonth=11;calYear--;} if(calMonth>11){calMonth=0;calYear++;} renderCalendar(); }
 function calToday(){ calYear=_now.getFullYear(); calMonth=_now.getMonth(); renderCalendar(); }
-function setTaskFilter(s){ taskStatusFilter=s; renderTodoList(); document.querySelectorAll('.filterbar .seg button').forEach(b=>b.classList.toggle('active', b.textContent.toLowerCase()===s)); }
+function setTaskFilter(s){ taskStatusFilter=s; renderTodoList(); document.querySelectorAll('.filterbar .seg button').forEach(b=>b.classList.toggle('active',b.textContent.toLowerCase()===s)); }
 function filterDay(iso){ taskDayFilter=iso; renderCalendar(); }
 
 function renderTodoList(){
@@ -758,13 +939,13 @@ function renderTodoList(){
   else if(taskPropFilter) items=items.filter(t=>t.propertyId===taskPropFilter);
   if(taskDayFilter) items=items.filter(t=>t.due===taskDayFilter);
   items.sort((a,b)=>(a.done-b.done)||((a.due||'9999')>(b.due||'9999')?1:(a.due===b.due?0:-1)));
-  host.innerHTML = items.length ? items.map(t=>todoItemHTML(t,true)).join('')
-    : `<p class="muted-note">No tasks match this filter.</p>`;
+  host.innerHTML=items.length?items.map(t=>todoItemHTML(t,true)).join('')
+    :`<p class="muted-note">No tasks match this filter.</p>`;
 }
 
-function todoItemHTML(t, showProp){
-  const overdue = !t.done && t.due && t.due < isoDay(_now.getFullYear(),_now.getMonth(),_now.getDate());
-  const due = t.due ? `<span class="${overdue?'pill danger':''}">${overdue?'Overdue · ':''}${fmt(t.due)}</span>` : 'No due date';
+function todoItemHTML(t,showProp){
+  const overdue=!t.done&&t.due&&t.due<isoDay(_now.getFullYear(),_now.getMonth(),_now.getDate());
+  const due=t.due?`<span class="${overdue?'pill danger':''}">${overdue?'Overdue · ':''}${fmt(t.due)}</span>`:'No due date';
   return `<div class="todo-item">
     <input type="checkbox" class="todo-check" ${t.done?'checked':''} onchange="toggleTask('${t.id}',this.checked)">
     <div class="todo-main">
@@ -780,45 +961,48 @@ function todoItemHTML(t, showProp){
   </div>`;
 }
 
-async function toggleTask(id, done){
+async function toggleTask(id,done){
   try{
     await api('/api/tasks/'+id,{method:'PUT',body:JSON.stringify({done})});
-    const t=tasks.find(x=>x.id===id); if(t){t.done=done;}
+    const t=tasks.find(x=>x.id===id); if(t) t.done=done;
     rerenderTasks();
   }catch(e){ alert(e.message); await loadTasks(); rerenderTasks(); }
 }
+
 async function deleteTask(id){
   if(!confirm('Delete this task?')) return;
   await api('/api/tasks/'+id,{method:'DELETE'});
   await loadTasks(); rerenderTasks();
 }
+
 function rerenderTasks(){
   if(view==='calendar') renderCalendar();
-  else if(current && currentTab==='tasks') renderTab();
+  else if(current&&currentTab==='tasks') renderTab();
 }
 
-/* ---- task modal ---- */
+/* ── Task modal ── */
 function openTaskById(id){ openTaskModal(tasks.find(x=>x.id===id)||null); }
-function openTaskModal(t=null, presetProp=''){
+function openTaskModal(t=null,presetProp=''){
   const g=id=>document.getElementById(id);
-  g('taskModalTitle').textContent = t?'Edit task':'New task';
-  g('t_id').value = t?t.id:'';
-  g('t_title').value = t?t.title:'';
-  g('t_due').value = t?(t.due||''):'';
-  g('t_notes').value = t?(t.notes||''):'';
+  g('taskModalTitle').textContent=t?'Edit task':'New task';
+  g('t_id').value=t?t.id:'';
+  g('t_title').value=t?t.title:'';
+  g('t_due').value=t?(t.due||''):'';
+  g('t_notes').value=t?(t.notes||''):'';
   const sel=g('t_property');
-  sel.innerHTML = `<option value="">General (no property)</option>`+
+  sel.innerHTML=`<option value="">General (no property)</option>`+
     list.map(p=>`<option value="${p.id}">${esc(p.nickname||p.address)}</option>`).join('');
-  sel.value = t?(t.propertyId||''):(presetProp||'');
+  sel.value=t?(t.propertyId||''):(presetProp||'');
   document.getElementById('taskBackdrop').classList.add('open');
 }
 function closeTaskModal(){ document.getElementById('taskBackdrop').classList.remove('open'); }
+
 async function saveTask(){
   const g=id=>document.getElementById(id).value;
   const title=g('t_title').trim();
   if(!title){ alert('Task title is required.'); return; }
   const id=g('t_id');
-  const payload={title, propertyId:g('t_property'), due:g('t_due'), notes:g('t_notes').trim()};
+  const payload={title,propertyId:g('t_property'),due:g('t_due'),notes:g('t_notes').trim()};
   try{
     if(id) await api('/api/tasks/'+id,{method:'PUT',body:JSON.stringify(payload)});
     else   await api('/api/tasks',{method:'POST',body:JSON.stringify(payload)});
@@ -827,7 +1011,7 @@ async function saveTask(){
   }catch(e){ alert(e.message); }
 }
 
-/* ---------------- rent tracker (imported sheet) ---------------- */
+/* ── Rent tracker ── */
 let sheetData=null;
 function money(s){
   if(s==null||s===''||s==='-') return '—';
@@ -843,14 +1027,15 @@ function statusClass(s){
   if(/vacant|tbd|pending/.test(x)) return 'amber';
   return 'grey';
 }
+
 async function renderSheet(){
   const host=document.getElementById('sheetView');
   if(!sheetData){
     host.innerHTML='<div class="empty">Loading…</div>';
-    try{ sheetData=await api('/api/sheet'); }catch(e){ host.innerHTML=`<div class="empty"><h2>Couldn’t load sheet</h2><p>${esc(e.message)}</p></div>`; return; }
+    try{ sheetData=await api('/api/sheet'); }catch(e){ host.innerHTML=`<div class="empty"><h2>Couldn't load sheet</h2><p>${esc(e.message)}</p></div>`; return; }
   }
   const d=sheetData;
-  if(d.empty || !d.rows){
+  if(d.empty||!d.rows){
     host.innerHTML=`<div class="empty"><h2>No sheet imported</h2><p>Run <code>python3 import_sheet.py</code> to load the rent tracker.</p></div>`;
     return;
   }
@@ -864,11 +1049,8 @@ async function renderSheet(){
     const isNew=r.address!==prevAddr; prevAddr=r.address;
     return `<tr class="${isNew?'addr-start':''}">
       <td class="addr">${isNew?esc(r.address):''}</td>
-      <td>${esc(r.unit)}</td>
-      <td>${esc(r.type)}</td>
-      <td>${esc(r.bedrooms)}</td>
-      <td class="num">${money(r.rent)}</td>
-      <td class="num">${money(r.paid)}</td>
+      <td>${esc(r.unit)}</td><td>${esc(r.type)}</td><td>${esc(r.bedrooms)}</td>
+      <td class="num">${money(r.rent)}</td><td class="num">${money(r.paid)}</td>
       <td class="num">${money(r.balance)}</td>
       <td><span class="st ${statusClass(r.status)}">${esc(r.status||'—')}</span></td>
       <td class="note-cell">${esc(r.notes)}</td>
@@ -878,8 +1060,8 @@ async function renderSheet(){
   }).join('');
 
   const expRows=(d.expenses||[]).map(e=>`<tr>
-      <td><strong>${esc(e.expense)}</strong></td><td>${esc(e.detail)}</td>
-      <td class="num">${money(e.amount)}</td><td class="note-cell">${esc(e.notes)}</td></tr>`).join('');
+    <td><strong>${esc(e.expense)}</strong></td><td>${esc(e.detail)}</td>
+    <td class="num">${money(e.amount)}</td><td class="note-cell">${esc(e.notes)}</td></tr>`).join('');
 
   host.innerHTML=`
     <div class="addr-head" style="margin-top:6px"><h2 class="sheet-title">${esc(d.title)}</h2></div>
@@ -909,12 +1091,13 @@ async function renderSheet(){
     </div>`;
 }
 
-/* ---------------- util ---------------- */
+/* ── Util ── */
 function esc(s){ return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
-/* ---------------- init ---------------- */
+/* ── Init ── */
 (async function(){
-  try{ await boot(); }       // already logged in?
+  initMap();
+  try{ await boot(); }
   catch{ showLogin(); }
 })();
 </script>
