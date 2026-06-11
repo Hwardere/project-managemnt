@@ -11,7 +11,7 @@ Data is stored in ./data/db.json ; uploaded files in ./data/uploads/<id>/<topic>
 Run:  python3 app.py   (then open http://localhost:8000)
 """
 
-import os, json, cgi, html, secrets, threading, mimetypes, datetime
+import os, json, cgi, html, secrets, threading, mimetypes, datetime, io, zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit, unquote
 
@@ -23,6 +23,7 @@ DATA_DIR = os.path.join(HERE, "data")
 UPLOAD_DIR = os.path.join(DATA_DIR, "uploads")
 DB_PATH = os.path.join(DATA_DIR, "db.json")
 TASKS_PATH = os.path.join(DATA_DIR, "tasks.json")
+SHEET_PATH = os.path.join(DATA_DIR, "rent_tracker.json")
 
 PORT = int(os.environ.get("PORT", "8000"))
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin123")
@@ -200,10 +201,21 @@ class Handler(BaseHTTPRequestHandler):
             if not role:
                 return self._unauth()
             return self._send_json({"role": role, "topics": TOPICS, "leaseTopic": LEASE_TOPIC})
+        if path == "/api/backup":
+            if self._role() != "admin":
+                return self._send_json({"error": "admin only"}, 403)
+            return self._send_backup()
         if path == "/api/tasks":
             if not self._role():
                 return self._unauth()
             return self._send_json(load_tasks())
+        if path == "/api/sheet":
+            if not self._role():
+                return self._unauth()
+            if os.path.exists(SHEET_PATH):
+                with open(SHEET_PATH, "r") as f:
+                    return self._send_json(json.load(f))
+            return self._send_json({"empty": True})
         if path == "/api/properties":
             if not self._role():
                 return self._unauth()
@@ -271,6 +283,10 @@ class Handler(BaseHTTPRequestHandler):
                 save_db(db)
             return self._send_json(data)
 
+        if path == "/api/restore":
+            if role != "admin":
+                return self._send_json({"error": "admin only"}, 403)
+            return self._do_restore()
         if path == "/api/tasks":
             data = self._read_json()
             if not data.get("title", "").strip():
@@ -312,9 +328,10 @@ class Handler(BaseHTTPRequestHandler):
                 p = get_prop(db, pid)
                 if not p:
                     return self._send_json({"error": "not found"}, 404)
-                # workers and admins may edit fields; preserve id + docs
+                # workers and admins may edit fields; preserve id, docs, units,
+                # and imported accounts (utilities are managed via re-import)
                 for key in ("address", "nickname", "type", "insurance",
-                            "landscaping", "utilities", "occupancy"):
+                            "landscaping", "occupancy"):
                     if key in data:
                         p[key] = data[key]
                 save_db(db)
@@ -447,6 +464,58 @@ class Handler(BaseHTTPRequestHandler):
         if os.path.exists(fpath):
             os.remove(fpath)
         return self._send_json({"ok": True})
+
+    # ---- backup / restore (admin) ----
+    def _send_backup(self):
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+            for name in ("db.json", "tasks.json", "rent_tracker.json"):
+                fp = os.path.join(DATA_DIR, name)
+                if os.path.exists(fp):
+                    z.write(fp, name)
+            if os.path.isdir(UPLOAD_DIR):
+                for root, _, files in os.walk(UPLOAD_DIR):
+                    for fn in files:
+                        full = os.path.join(root, fn)
+                        z.write(full, os.path.relpath(full, DATA_DIR))
+        raw = buf.getvalue()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/zip")
+        self.send_header("Content-Length", str(len(raw)))
+        self.send_header("Content-Disposition",
+                         'attachment; filename="property-manager-backup.zip"')
+        self.end_headers()
+        self.wfile.write(raw)
+
+    def _do_restore(self):
+        form = cgi.FieldStorage(
+            fp=self.rfile, headers=self.headers,
+            environ={"REQUEST_METHOD": "POST",
+                     "CONTENT_TYPE": self.headers.get("Content-Type", "")})
+        if "file" not in form:
+            return self._send_json({"error": "no file"}, 400)
+        raw = form["file"].file.read()
+        try:
+            zf = zipfile.ZipFile(io.BytesIO(raw))
+        except zipfile.BadZipFile:
+            return self._send_json({"error": "not a valid .zip"}, 400)
+        allowed = {"db.json", "tasks.json", "rent_tracker.json"}
+        restored = 0
+        with _lock:
+            for member in zf.namelist():
+                if member.endswith("/"):
+                    continue
+                norm = os.path.normpath(member)
+                if norm.startswith("..") or os.path.isabs(norm):
+                    continue  # path-traversal guard
+                if not (norm in allowed or norm.startswith("uploads" + os.sep)):
+                    continue
+                dest = os.path.join(DATA_DIR, norm)
+                os.makedirs(os.path.dirname(dest), exist_ok=True)
+                with open(dest, "wb") as f:
+                    f.write(zf.read(member))
+                restored += 1
+        return self._send_json({"ok": True, "restored": restored})
 
     # ---- frontend ----
     def _serve_index(self):

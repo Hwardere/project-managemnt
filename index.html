@@ -134,6 +134,33 @@
   .todo-meta{font-size:12px;color:var(--muted);margin-top:3px;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
   .tag{background:#eef1f4;color:var(--muted);border-radius:999px;padding:1px 8px;font-size:11px;font-weight:600}
 
+  /* rent tracker */
+  .kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:18px}
+  @media(max-width:760px){.kpis{grid-template-columns:repeat(2,1fr)}}
+  .kpi{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;box-shadow:var(--shadow)}
+  .kpi .lab{font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);font-weight:700}
+  .kpi .num{font-size:22px;font-weight:700;margin-top:6px;letter-spacing:-.5px}
+  .kpi .num.ok{color:var(--ok)} .kpi .num.danger{color:var(--danger)} .kpi .num.accent{color:var(--accent)}
+  .sheet-title{margin:2px 0 2px;font-size:20px}
+  .sheet-sub{color:var(--muted);font-size:14px;margin-bottom:16px}
+  .sheet-wrap{overflow-x:auto}
+  table.sheet{width:100%;border-collapse:collapse;font-size:13px;min-width:760px}
+  table.sheet th,table.sheet td{padding:9px 10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+  table.sheet th{font-size:11px;text-transform:uppercase;letter-spacing:.3px;color:var(--muted);
+    font-weight:700;position:sticky;top:0;background:#fff}
+  table.sheet td.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+  table.sheet tr.addr-start td{border-top:2px solid #e8edf3}
+  table.sheet .addr{font-weight:650}
+  table.sheet tfoot td{font-weight:700;border-top:2px solid var(--ink);border-bottom:none}
+  .st{display:inline-block;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:700;white-space:nowrap}
+  .st.green{background:#e9f9ef;color:var(--ok)} .st.red{background:#fdeaea;color:var(--danger)}
+  .st.amber{background:#fef3e2;color:var(--warn)} .st.blue{background:#eef3ff;color:var(--accent)}
+  .st.grey{background:#eef1f4;color:var(--muted)}
+  .note-cell{color:var(--muted);font-size:12px;max-width:260px}
+  .secret{cursor:pointer;color:var(--accent);font-weight:600;letter-spacing:1px}
+  .secret.shown{letter-spacing:0;font-family:ui-monospace,Menlo,monospace;font-size:12px}
+  .reco{color:var(--accent);font-size:12px;max-width:240px}
+
   /* modal */
   .backdrop{position:fixed;inset:0;background:rgba(16,24,40,.45);display:none;align-items:flex-start;
     justify-content:center;z-index:50;padding:40px 16px;overflow-y:auto}
@@ -177,6 +204,8 @@
     <h1>Property Manager</h1>
     <div class="right">
       <span id="roleBadge"></span>
+      <button class="ghost" id="backupBtn" onclick="downloadBackup()" style="display:none">Backup</button>
+      <label class="ghost" id="restoreBtn" style="display:none;cursor:pointer">Restore<input type="file" hidden accept=".zip" onchange="uploadRestore(event)"></label>
       <button class="ghost" onclick="doLogout()">Sign out</button>
     </div>
   </header>
@@ -185,6 +214,7 @@
     <div class="mainnav">
       <button class="navbtn active" id="navProps" onclick="setView('properties')">Properties</button>
       <button class="navbtn" id="navCal" onclick="setView('calendar')">To-Do &amp; Calendar</button>
+      <button class="navbtn" id="navSheet" onclick="setView('sheet')">Rent Tracker</button>
     </div>
 
     <div id="propsView">
@@ -203,6 +233,7 @@
     </div>
 
     <div id="calView" style="display:none"></div>
+    <div id="sheetView" style="display:none"></div>
   </div>
 </div>
 
@@ -223,7 +254,8 @@
           <div class="field"><label>Type</label>
             <select id="f_type">
               <option>Single-family</option><option>Duplex / Multi-family</option>
-              <option>Condo</option><option>Commercial</option><option>Land</option>
+              <option>Mixed-use</option><option>Condo</option>
+              <option>Commercial</option><option>Land</option>
             </select>
           </div>
         </div>
@@ -261,11 +293,7 @@
           <div class="field"><label>Lease end</label><input type="date" id="f_occ_end"></div>
         </div>
       </fieldset>
-      <fieldset class="fieldset">
-        <legend>Utility accounts</legend>
-        <div id="utilList"></div>
-        <button onclick="addUtilRow()">+ Add utility</button>
-      </fieldset>
+      <p class="muted-note" style="margin-top:-4px">Accounts &amp; utilities and units are imported from the source sheets and shown read-only on the Overview tab.</p>
     </div>
     <div class="modal-foot">
       <button onclick="closeModal()">Cancel</button>
@@ -344,8 +372,25 @@ async function boot(){
   badge.className='role-badge '+ROLE;
   badge.textContent = ROLE==='admin'?'Admin':'Worker';
   document.getElementById('addBtn').style.display = ROLE==='admin'?'':'none';
+  document.getElementById('backupBtn').style.display = ROLE==='admin'?'':'none';
+  document.getElementById('restoreBtn').style.display = ROLE==='admin'?'':'none';
   await refreshList();
   await loadTasks();
+}
+
+function downloadBackup(){ window.location='/api/backup'; }
+async function uploadRestore(e){
+  const file=e.target.files[0]; e.target.value='';
+  if(!file) return;
+  if(!confirm('Restore from this backup? It overwrites current data on the server.')) return;
+  const fd=new FormData(); fd.append('file', file);
+  try{
+    const r=await fetch('/api/restore',{method:'POST',body:fd});
+    const j=await r.json();
+    if(!r.ok) throw new Error(j.error||'Restore failed');
+    alert('Restored '+j.restored+' files. Reloading.');
+    current=null; await refreshList(); await loadTasks(); render();
+  }catch(err){ alert(err.message); }
 }
 
 /* ---------------- view switch ---------------- */
@@ -353,9 +398,12 @@ function setView(v){
   view=v;
   document.getElementById('navProps').classList.toggle('active', v==='properties');
   document.getElementById('navCal').classList.toggle('active', v==='calendar');
+  document.getElementById('navSheet').classList.toggle('active', v==='sheet');
   document.getElementById('propsView').style.display = v==='properties'?'':'none';
   document.getElementById('calView').style.display = v==='calendar'?'':'none';
+  document.getElementById('sheetView').style.display = v==='sheet'?'':'none';
   if(v==='calendar') renderCalendar();
+  if(v==='sheet') renderSheet();
 }
 
 /* ---------------- list ---------------- */
@@ -433,6 +481,26 @@ function propTasksHTML(p){
     ${rows}</div>`;
 }
 
+function unitsCardHTML(p){
+  if(!p.units || !p.units.length) return '';
+  const rows = p.units.map(u=>`<tr>
+    <td><strong>${esc(u.unit||'—')}</strong></td>
+    <td>${esc(u.type||'—')}</td>
+    <td>${esc(u.bedrooms||'—')}</td>
+    <td class="num">${money(u.rent)}</td>
+    <td class="num">${money(u.paid)}</td>
+    <td><span class="st ${statusClass(u.status)}">${esc(u.status||'—')}</span></td>
+    <td>${esc(u.tenant||'—')}</td>
+  </tr>`).join('');
+  const occ = p.units.filter(u=>/paid|occupied|non-?payment|squatter/i.test(u.status||'')).length;
+  const billed=p.units.reduce((s,u)=>s+(parseFloat(String(u.rent).replace(/[^0-9.\-]/g,''))||0),0);
+  return `<div class="card full"><h3>Units — ${p.units.length} total, ${occ} occupied · ${money(billed)}/mo billed</h3>
+    <div class="sheet-wrap"><table class="sheet" style="min-width:640px">
+      <thead><tr><th>Unit</th><th>Type</th><th>Beds</th><th>Rent</th><th>Paid</th><th>Status</th><th>Tenant</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div></div>`;
+}
+
 function overviewHTML(p){
   const ev=[]; const push=(l,d)=>{const n=daysUntil(d); if(n!==null&&n<=14) ev.push({l,d,n});};
   push('Insurance expiration',p.insurance.exp); push('Insurance payment',p.insurance.pay);
@@ -443,11 +511,9 @@ function overviewHTML(p){
   const alerts = ev.map(e=>{const c=e.n<0?'danger':'warn';
     const w=e.n<0?`${-e.n} days overdue`:`due in ${e.n} day${e.n===1?'':'s'}`;
     return `<div class="alert ${c}"><span class="dot"></span><strong>${esc(e.l)}</strong> — ${w} (${fmt(e.d)})</div>`;}).join('');
-  const utils=(p.utilities||[]).length?p.utilities.map(u=>`<tr><td><strong>${esc(u.type)}</strong></td>
-      <td>${esc(u.provider||'—')}</td><td>${esc(u.account||'—')}</td><td>${fmt(u.pay)}</td><td>${pill(u.pay)}</td></tr>`).join('')
-    :`<tr><td colspan="5" class="muted-note">No utility accounts.</td></tr>`;
   return `${alerts?`<div class="alerts">${alerts}</div>`:''}
     <div class="grid">
+      ${unitsCardHTML(p)}
       <div class="card"><h3>Insurance</h3>
         <div class="row"><span class="k">Provider</span><span class="v">${esc(p.insurance.provider||'—')}</span></div>
         <div class="row"><span class="k">Policy number</span><span class="v">${esc(p.insurance.policy||'—')}</span></div>
@@ -462,11 +528,29 @@ function overviewHTML(p){
         <div class="row"><span class="k">Next service</span><span class="v">${fmt(p.landscaping.next)} ${pill(p.landscaping.next)}</span></div>
         <div class="row"><span class="k">Payment due</span><span class="v">${fmt(p.landscaping.pay)} ${pill(p.landscaping.pay)}</span></div>
       </div>
-      <div class="card full"><h3>Utility accounts</h3>
-        <table><thead><tr><th>Utility</th><th>Provider</th><th>Account #</th><th>Next payment</th><th>Status</th></tr></thead>
-        <tbody>${utils}</tbody></table>
-      </div>
+      ${accountsCardHTML(p)}
     </div>`;
+}
+
+function accountsCardHTML(p){
+  const accts = p.utilities || [];
+  const body = accts.length ? accts.map(u=>`<tr>
+      <td><strong>${esc(u.type||'—')}</strong></td>
+      <td>${esc(u.provider||'—')}</td>
+      <td>${esc(u.unit||'')}</td>
+      <td>${esc(u.account||'—')}</td>
+      <td>${u.username?esc(u.username):'—'}</td>
+      <td>${u.password
+            ? `<span class="secret" title="click to reveal" onclick="this.textContent=this.dataset.v;this.classList.add('shown');this.onclick=null" data-v="${esc(u.password)}">•••••••</span>`
+            : '—'}</td>
+      <td>${u.website?`<a href="${esc(u.website)}" target="_blank">link</a>`:''}</td>
+    </tr>`).join('')
+    : `<tr><td colspan="7" class="muted-note">No accounts on file.</td></tr>`;
+  return `<div class="card full"><h3>Accounts &amp; utilities${accts.length?` — ${accts.length}`:''}</h3>
+    <div class="sheet-wrap"><table class="sheet" style="min-width:720px">
+      <thead><tr><th>Service</th><th>Company</th><th>Unit</th><th>Account #</th><th>Username</th><th>Password</th><th>Web</th></tr></thead>
+      <tbody>${body}</tbody>
+    </table></div></div>`;
 }
 
 function occupancyHTML(p){
@@ -562,8 +646,6 @@ function openModal(prop=null){
   g('f_occ_on').checked=!!o.occupied; toggleOcc();
   g('f_occ_tenant').value=o.tenant||''; g('f_occ_rent').value=o.rent||'';
   g('f_occ_start').value=o.leaseStart||''; g('f_occ_end').value=o.leaseEnd||'';
-  const ul=g('utilList'); ul.innerHTML='';
-  (prop?.utilities||[]).forEach(addUtilRow); if(!prop) addUtilRow();
   document.getElementById('backdrop').classList.add('open');
 }
 function closeModal(){ document.getElementById('backdrop').classList.remove('open'); }
@@ -588,8 +670,7 @@ async function saveProperty(){
     landscaping:{company:g('f_land_company').trim(),freq:g('f_land_freq'),
       next:g('f_land_next'),pay:g('f_land_pay')},
     occupancy:{occupied:occOn,tenant:g('f_occ_tenant').trim(),rent:g('f_occ_rent').trim(),
-      leaseStart:g('f_occ_start'),leaseEnd:g('f_occ_end')},
-    utilities:collectUtils()
+      leaseStart:g('f_occ_start'),leaseEnd:g('f_occ_end')}
   };
   try{
     let saved;
@@ -744,6 +825,88 @@ async function saveTask(){
     closeTaskModal();
     await loadTasks(); rerenderTasks();
   }catch(e){ alert(e.message); }
+}
+
+/* ---------------- rent tracker (imported sheet) ---------------- */
+let sheetData=null;
+function money(s){
+  if(s==null||s===''||s==='-') return '—';
+  const n=parseFloat(String(s).replace(/[^0-9.\-]/g,''));
+  if(isNaN(n)) return esc(s);
+  return '$'+n.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
+}
+function statusClass(s){
+  const x=(s||'').toLowerCase();
+  if(/paid|occupied/.test(x)) return 'green';
+  if(/non-?payment|squatter|legal/.test(x)) return 'red';
+  if(/airbnb|for sale/.test(x)) return 'blue';
+  if(/vacant|tbd|pending/.test(x)) return 'amber';
+  return 'grey';
+}
+async function renderSheet(){
+  const host=document.getElementById('sheetView');
+  if(!sheetData){
+    host.innerHTML='<div class="empty">Loading…</div>';
+    try{ sheetData=await api('/api/sheet'); }catch(e){ host.innerHTML=`<div class="empty"><h2>Couldn’t load sheet</h2><p>${esc(e.message)}</p></div>`; return; }
+  }
+  const d=sheetData;
+  if(d.empty || !d.rows){
+    host.innerHTML=`<div class="empty"><h2>No sheet imported</h2><p>Run <code>python3 import_sheet.py</code> to load the rent tracker.</p></div>`;
+    return;
+  }
+  const billed=parseFloat((d.totals.rent||'0').replace(/[^0-9.\-]/g,''))||0;
+  const collected=parseFloat((d.totals.paid||'0').replace(/[^0-9.\-]/g,''))||0;
+  const outstanding=parseFloat((d.totals.balance||'0').replace(/[^0-9.\-]/g,''))||0;
+  const collRate=billed?Math.round(collected/billed*100):0;
+
+  let prevAddr=null;
+  const rows=d.rows.map(r=>{
+    const isNew=r.address!==prevAddr; prevAddr=r.address;
+    return `<tr class="${isNew?'addr-start':''}">
+      <td class="addr">${isNew?esc(r.address):''}</td>
+      <td>${esc(r.unit)}</td>
+      <td>${esc(r.type)}</td>
+      <td>${esc(r.bedrooms)}</td>
+      <td class="num">${money(r.rent)}</td>
+      <td class="num">${money(r.paid)}</td>
+      <td class="num">${money(r.balance)}</td>
+      <td><span class="st ${statusClass(r.status)}">${esc(r.status||'—')}</span></td>
+      <td class="note-cell">${esc(r.notes)}</td>
+      <td class="num">${r.marketComp?esc(r.marketComp):'—'}</td>
+      <td class="reco">${esc(r.recommendation)}</td>
+    </tr>`;
+  }).join('');
+
+  const expRows=(d.expenses||[]).map(e=>`<tr>
+      <td><strong>${esc(e.expense)}</strong></td><td>${esc(e.detail)}</td>
+      <td class="num">${money(e.amount)}</td><td class="note-cell">${esc(e.notes)}</td></tr>`).join('');
+
+  host.innerHTML=`
+    <div class="addr-head" style="margin-top:6px"><h2 class="sheet-title">${esc(d.title)}</h2></div>
+    <div class="sheet-sub">${d.period?'Reporting period: '+esc(d.period)+' · ':''}<em>Imported preview (read-only)</em></div>
+    <div class="kpis">
+      <div class="kpi"><div class="lab">Rent billed</div><div class="num">${money(d.totals.rent)}</div></div>
+      <div class="kpi"><div class="lab">Collected</div><div class="num ok">${money(d.totals.paid)}</div></div>
+      <div class="kpi"><div class="lab">Outstanding</div><div class="num ${outstanding>0?'danger':''}">${money(d.totals.balance)}</div></div>
+      <div class="kpi"><div class="lab">Expenses</div><div class="num">${money(d.totalExpenses)}</div></div>
+      <div class="kpi"><div class="lab">Net income</div><div class="num accent">${money(d.netIncome)}</div></div>
+    </div>
+    <div class="card full" style="margin-bottom:18px">
+      <h3>Rent roll — collection rate ${collRate}%</h3>
+      <div class="sheet-wrap"><table class="sheet">
+        <thead><tr><th>Property</th><th>Unit</th><th>Type</th><th>Beds</th><th>Rent</th><th>Paid</th><th>Balance</th><th>Status</th><th>Notes</th><th>Market comp</th><th>Recommendation</th></tr></thead>
+        <tbody>${rows}</tbody>
+        <tfoot><tr><td colspan="4">TOTALS</td><td class="num">${money(d.totals.rent)}</td><td class="num">${money(d.totals.paid)}</td><td class="num">${money(d.totals.balance)}</td><td colspan="4"></td></tr></tfoot>
+      </table></div>
+    </div>
+    <div class="card full">
+      <h3>Expenses — ${esc(d.period||'')}</h3>
+      <div class="sheet-wrap"><table class="sheet" style="min-width:520px">
+        <thead><tr><th>Expense</th><th>Property / detail</th><th>Amount</th><th>Notes</th></tr></thead>
+        <tbody>${expRows}</tbody>
+        <tfoot><tr><td colspan="2">TOTAL EXPENSES</td><td class="num">${money(d.totalExpenses)}</td><td></td></tr></tfoot>
+      </table></div>
+    </div>`;
 }
 
 /* ---------------- util ---------------- */

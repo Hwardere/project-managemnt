@@ -1,6 +1,15 @@
 # Runtime data — NEVER commit real property data, tasks, or uploaded files
 data/
 
+# Local one-off data-import/transform scripts (contain addresses & tenant names)
+import_sheet.py
+import_accounts.py
+import_leases.py
+import_lease_terms.py
+import_rentroll_tenants.py
+build_properties.py
+apply_corrections.py
+
 # Python
 __pycache__/
 *.pyc
