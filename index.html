@@ -227,6 +227,52 @@
   .secret.shown{letter-spacing:0;font-family:ui-monospace,Menlo,monospace;font-size:12px;}
   .reco{color:var(--accent);font-size:12px;max-width:220px;}
 
+  /* ── Property selector (liquid glass) ── */
+  .prop-toolbar{padding:8px 20px 0;position:relative;z-index:16;}
+  .prop-selector{position:relative;display:inline-block;}
+  .prop-sel-trigger{
+    display:flex;align-items:center;gap:10px;
+    padding:10px 14px 10px 16px;border-radius:14px;
+    background:rgba(255,255,255,.18);
+    backdrop-filter:blur(24px) saturate(200%);-webkit-backdrop-filter:blur(24px) saturate(200%);
+    border:1px solid rgba(255,255,255,.35);
+    color:#fff;font:inherit;font-size:14px;font-weight:600;cursor:pointer;
+    text-shadow:0 1px 3px rgba(0,0,0,.5);
+    box-shadow:0 4px 24px rgba(0,0,0,.28),inset 0 1px 0 rgba(255,255,255,.28);
+    transition:background .15s,border-color .15s;min-width:220px;white-space:nowrap;}
+  .prop-sel-trigger:hover{background:rgba(255,255,255,.28);border-color:rgba(255,255,255,.5);}
+  .prop-sel-trigger .sel-label{flex:1;text-align:left;overflow:hidden;text-overflow:ellipsis;}
+  .prop-sel-trigger .sel-chevron{opacity:.65;font-size:11px;transition:transform .2s cubic-bezier(.4,0,.2,1);}
+  .prop-selector.open .sel-chevron{transform:rotate(180deg);}
+  .prop-sel-dropdown{
+    position:absolute;top:calc(100% + 7px);left:0;width:300px;
+    background:rgba(8,10,26,.8);
+    backdrop-filter:blur(40px) saturate(220%);-webkit-backdrop-filter:blur(40px) saturate(220%);
+    border:1px solid rgba(255,255,255,.14);border-radius:16px;
+    box-shadow:0 24px 64px rgba(0,0,0,.65),inset 0 1px 0 rgba(255,255,255,.1);
+    overflow:hidden;opacity:0;transform:translateY(-6px) scale(.98);
+    transition:opacity .18s ease,transform .2s cubic-bezier(.34,1.3,.64,1);
+    pointer-events:none;z-index:17;}
+  .prop-selector.open .prop-sel-dropdown{opacity:1;transform:translateY(0) scale(1);pointer-events:auto;}
+  .prop-sel-search{padding:10px 12px;border-bottom:1px solid rgba(255,255,255,.09);}
+  .prop-sel-search input{
+    width:100%;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.15);
+    color:#fff;border-radius:9px;padding:8px 11px;font:inherit;font-size:13px;}
+  .prop-sel-search input::placeholder{color:rgba(255,255,255,.38);}
+  .prop-sel-search input:focus{outline:none;border-color:rgba(99,155,255,.5);background:rgba(255,255,255,.15);}
+  .prop-sel-list{max-height:300px;overflow-y:auto;}
+  .prop-sel-list::-webkit-scrollbar{width:4px;}
+  .prop-sel-list::-webkit-scrollbar-track{background:transparent;}
+  .prop-sel-list::-webkit-scrollbar-thumb{background:rgba(255,255,255,.2);border-radius:4px;}
+  .prop-sel-item{
+    display:flex;flex-direction:column;gap:2px;padding:10px 14px;cursor:pointer;
+    border-bottom:1px solid rgba(255,255,255,.06);transition:background .1s;}
+  .prop-sel-item:last-child{border-bottom:none;}
+  .prop-sel-item:hover{background:rgba(255,255,255,.1);}
+  .prop-sel-item.active{background:rgba(37,99,235,.38);}
+  .prop-sel-item .si-addr{color:rgba(255,255,255,.95);font-weight:600;font-size:13px;}
+  .prop-sel-item .si-nick{color:rgba(255,255,255,.42);font-size:11px;}
+
   .backdrop{position:fixed;inset:0;background:rgba(16,24,40,.45);display:none;align-items:flex-start;
     justify-content:center;z-index:60;padding:40px 16px;overflow-y:auto;}
   .backdrop.open{display:flex;}
@@ -289,6 +335,22 @@
     <button class="navbtn active" id="navProps" onclick="setView('properties')">Properties</button>
     <button class="navbtn" id="navCal" onclick="setView('calendar')">To-Do &amp; Calendar</button>
     <button class="navbtn" id="navSheet" onclick="setView('sheet')">Rent Tracker</button>
+  </div>
+
+  <!-- Liquid glass property selector -->
+  <div class="prop-toolbar" id="propToolbar" style="display:none">
+    <div class="prop-selector" id="propSelector">
+      <button class="prop-sel-trigger" onclick="togglePropSel(event)">
+        <span class="sel-label" id="selLabel">Select a property</span>
+        <span class="sel-chevron">▾</span>
+      </button>
+      <div class="prop-sel-dropdown">
+        <div class="prop-sel-search">
+          <input type="text" id="selSearch" placeholder="Search address…" oninput="filterPropSel()" onclick="event.stopPropagation()">
+        </div>
+        <div class="prop-sel-list" id="selList"></div>
+      </div>
+    </div>
   </div>
 
   <div id="propsView"></div>
@@ -471,6 +533,7 @@ async function doLogout(){
 function showLogin(){
   document.getElementById('appView').style.display='none';
   document.getElementById('mapFab').style.display='none';
+  document.getElementById('propToolbar').style.display='none';
   closePanel();
   Object.values(propertyMarkers).forEach(m=>map&&map.removeLayer(m));
   propertyMarkers={};
@@ -490,6 +553,7 @@ async function boot(){
 
   document.getElementById('appView').style.display='block';
   document.getElementById('mapFab').style.display='flex';
+  document.getElementById('propToolbar').style.display='';
 
   const badge=document.getElementById('roleBadge');
   badge.className='role-badge '+ROLE;
@@ -533,7 +597,8 @@ function setView(v){
   document.getElementById('calView').style.display=v==='calendar'?'':'none';
   document.getElementById('sheetView').style.display=v==='sheet'?'':'none';
   document.getElementById('mapFab').style.display=(v==='properties'&&document.getElementById('appView').style.display!=='none')?'flex':'none';
-  if(v!=='properties') closePanel();
+  document.getElementById('propToolbar').style.display=v==='properties'?'':'none';
+  if(v!=='properties'){ document.getElementById('propSelector').classList.remove('open'); closePanel(); }
   if(v==='calendar') renderCalendar();
   if(v==='sheet') renderSheet();
 }
@@ -605,6 +670,7 @@ function openPanel(){
   body.innerHTML=panelTabsHTML()+`<div id="tabBody"></div>`;
   renderTab();
   document.getElementById('propPanel').classList.add('open');
+  updateSelLabel();
   // Pan map to pin
   const m=propertyMarkers[current.id];
   if(m) map.panTo(m.getLatLng(),{animate:true,duration:.5});
@@ -613,6 +679,7 @@ function openPanel(){
 function closePanel(){
   document.getElementById('propPanel').classList.remove('open');
   current=null;
+  updateSelLabel();
 }
 
 function panelTabsHTML(){
@@ -1094,12 +1161,56 @@ async function renderSheet(){
 /* ── Util ── */
 function esc(s){ return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
+/* ── Property selector ── */
+function togglePropSel(e){
+  e.stopPropagation();
+  const s=document.getElementById('propSelector');
+  if(s.classList.contains('open')){ s.classList.remove('open'); return; }
+  populatePropSel('');
+  s.classList.add('open');
+  setTimeout(()=>{ const el=document.getElementById('selSearch'); if(el){el.value='';el.focus();} },50);
+}
+
+function populatePropSel(filter){
+  const q=(filter||'').toLowerCase();
+  const items=list
+    .filter(p=>!q||p.address.toLowerCase().includes(q)||(p.nickname||'').toLowerCase().includes(q))
+    .sort((a,b)=>a.address.toLowerCase()<b.address.toLowerCase()?-1:1);
+  document.getElementById('selList').innerHTML=items.length
+    ?items.map(p=>`<div class="prop-sel-item${current&&current.id===p.id?' active':''}" onclick="selPick('${p.id}')">
+        <span class="si-addr">${esc(p.address)}</span>
+        ${p.nickname?`<span class="si-nick">${esc(p.nickname)}</span>`:''}
+      </div>`).join('')
+    :`<div style="padding:14px 16px;color:rgba(255,255,255,.38);font-size:13px">No results</div>`;
+}
+
+function filterPropSel(){
+  populatePropSel(document.getElementById('selSearch').value);
+}
+
+async function selPick(id){
+  document.getElementById('propSelector').classList.remove('open');
+  await selectProperty(id);
+  updateSelLabel();
+}
+
+function updateSelLabel(){
+  const el=document.getElementById('selLabel');
+  if(!el) return;
+  el.textContent=current?(current.nickname||current.address.split(',')[0]):'Select a property';
+}
+
 /* ── Init ── */
 (async function(){
   initMap();
   try{ await boot(); }
   catch{ showLogin(); }
 })();
+
+document.addEventListener('click',()=>{
+  const s=document.getElementById('propSelector');
+  if(s) s.classList.remove('open');
+});
 </script>
 </body>
 </html>
